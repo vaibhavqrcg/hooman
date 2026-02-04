@@ -30,7 +30,6 @@ export async function initColleagueStore(uri: string): Promise<ColleagueStore> {
         allowed_capabilities: Array.isArray(doc.allowed_capabilities)
           ? doc.allowed_capabilities
           : [],
-        autonomy: doc.autonomy ?? { default: "ask_first" },
         memory: doc.memory ?? { scope: "role" },
         reporting: doc.reporting ?? { on: ["task_complete", "uncertainty"] },
       }));
@@ -46,7 +45,6 @@ export async function initColleagueStore(uri: string): Promise<ColleagueStore> {
         allowed_capabilities: Array.isArray(doc.allowed_capabilities)
           ? doc.allowed_capabilities
           : [],
-        autonomy: doc.autonomy ?? { default: "ask_first" },
         memory: doc.memory ?? { scope: "role" },
         reporting: doc.reporting ?? { on: ["task_complete", "uncertainty"] },
       };

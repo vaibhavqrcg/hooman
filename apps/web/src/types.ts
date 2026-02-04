@@ -14,14 +14,11 @@ export interface ChatMessage {
   lastAgentName?: string;
 }
 
-export type AutonomyLevel = "ask_first" | "autonomous" | "report_only";
-
 export interface ColleagueConfig {
   id: string;
   description: string;
   responsibilities: string;
   allowed_capabilities: string[];
-  autonomy: { default: AutonomyLevel };
   memory: { scope: string };
   reporting: { on: string[] };
 }

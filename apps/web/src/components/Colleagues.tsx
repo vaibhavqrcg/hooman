@@ -62,7 +62,6 @@ export function Colleagues() {
       description: "",
       responsibilities: "",
       allowed_capabilities: [],
-      autonomy: { default: "ask_first" },
       memory: { scope: "role" },
       reporting: { on: ["task_complete", "uncertainty"] },
     });
@@ -186,27 +185,6 @@ export function Colleagues() {
             }
             placeholder="Pick capabilities for this colleague"
           />
-          <Select<"ask_first" | "autonomous" | "report_only">
-            label="Autonomy"
-            value={form.autonomy?.default ?? "ask_first"}
-            options={[
-              {
-                value: "ask_first",
-                label: "Ask first — require approval before acting",
-              },
-              {
-                value: "autonomous",
-                label: "Autonomous — act without asking",
-              },
-              {
-                value: "report_only",
-                label: "Report only — observe and report, no actions",
-              },
-            ]}
-            onChange={(defaultValue) =>
-              setForm((f) => ({ ...f, autonomy: { default: defaultValue } }))
-            }
-          />
           <div className="flex gap-2 pt-2">
             <Button variant="success" onClick={save}>
               Save
@@ -235,8 +213,7 @@ export function Colleagues() {
                   {p.description || "—"}
                 </p>
                 <p className="text-xs text-zinc-500 mt-2">
-                  Autonomy: {p.autonomy?.default ?? "ask_first"} · Memory:{" "}
-                  {p.memory?.scope ?? "role"}
+                  Memory: {p.memory?.scope ?? "role"}
                 </p>
               </div>
               <div className="flex gap-2">

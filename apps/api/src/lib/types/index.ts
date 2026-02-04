@@ -129,14 +129,11 @@ export interface MemoryEntry {
 }
 
 // Colleagues
-export type AutonomyLevel = "ask_first" | "autonomous" | "report_only";
-
 export interface ColleagueConfig {
   id: string;
   description: string;
   responsibilities: string;
   allowed_capabilities: string[];
-  autonomy: { default: AutonomyLevel };
   memory: { scope: "role" | "global" };
   reporting: {
     on: ("task_complete" | "uncertainty" | "error")[];

@@ -1,15 +1,5 @@
-# Redis and Qdrant: shared by both dev and prod (no profile = always run with any profile)
+# Qdrant and MongoDB: shared by both dev and prod (no profile = always run with any profile)
 services:
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
   qdrant:
     image: qdrant/qdrant:v1.7.4
     volumes:
@@ -38,13 +28,10 @@ services:
       MONGO_URI: mongodb://mongodb:27017
       NODE_ENV: development
       QDRANT_URL: http://qdrant:6333
-      REDIS_URL: redis://redis:6379
     volumes:
       - ./apps/api:/app/apps/api
       - api_data:/app/apps/api/data
     depends_on:
-      redis:
-        condition: service_healthy
       qdrant:
         condition: service_started
       mongodb:
@@ -83,12 +70,9 @@ services:
       MONGO_URI: mongodb://mongodb:27017
       NODE_ENV: production
       QDRANT_URL: http://qdrant:6333
-      REDIS_URL: redis://redis:6379
     volumes:
       - api_data:/app/apps/api/data
     depends_on:
-      redis:
-        condition: service_healthy
       qdrant:
         condition: service_started
       mongodb:
@@ -107,7 +91,6 @@ services:
       - api
 
 volumes:
-  redis_data: {}
   qdrant_data: {}
   mongodb_data: {}
   api_data: {}
