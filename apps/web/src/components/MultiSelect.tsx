@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
 export interface MultiSelectOption {
@@ -28,7 +29,14 @@ export function MultiSelect({
   "aria-label": ariaLabel,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({
+    top: 0,
+    left: 0,
+    minWidth: 0,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLUListElement>(null);
 
   const selectedSet = new Set(value);
   const display =
@@ -46,15 +54,23 @@ export function MultiSelect({
     }
   }
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPopupPosition({
+      top: rect.bottom + 4,
+      left: rect.left,
+      minWidth: rect.width,
+    });
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const inTrigger = containerRef.current?.contains(target);
+      const inPopup = popupRef.current?.contains(target);
+      if (!inTrigger && !inPopup) setOpen(false);
     }
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -78,6 +94,7 @@ export function MultiSelect({
         </label>
       )}
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         aria-label={ariaLabel ?? label}
@@ -93,50 +110,58 @@ export function MultiSelect({
           aria-hidden
         />
       </button>
-      {open && (
-        <ul
-          role="listbox"
-          aria-multiselectable="true"
-          className="absolute z-10 mt-1 w-full rounded-lg border border-hooman-border bg-hooman-surface py-1 shadow-lg max-h-60 overflow-auto"
-        >
-          {options.length === 0 ? (
-            <li className="px-3 py-2 text-sm text-hooman-muted">
-              No capabilities available. Approve some from Capabilities first.
-            </li>
-          ) : (
-            options.map((opt) => {
-              const checked = selectedSet.has(opt.value);
-              return (
-                <li
-                  key={opt.value}
-                  role="option"
-                  aria-selected={checked}
-                  onClick={() => !disabled && toggle(opt.value)}
-                  className={`px-3 py-2 text-sm cursor-pointer transition-colors flex items-center gap-2 hover:bg-hooman-border/50 ${
-                    checked
-                      ? "bg-hooman-accent/20 text-hooman-accent"
-                      : "text-zinc-200"
-                  } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
-                >
-                  <span
-                    className={`flex items-center justify-center w-5 h-5 rounded border shrink-0 ${
+      {open &&
+        createPortal(
+          <ul
+            ref={popupRef}
+            role="listbox"
+            aria-multiselectable="true"
+            className="fixed rounded-lg border border-hooman-border bg-hooman-surface py-1 shadow-lg max-h-60 overflow-auto z-[100]"
+            style={{
+              top: popupPosition.top,
+              left: popupPosition.left,
+              minWidth: popupPosition.minWidth,
+            }}
+          >
+            {options.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-hooman-muted">
+                No capabilities available. Approve some from Capabilities first.
+              </li>
+            ) : (
+              options.map((opt) => {
+                const checked = selectedSet.has(opt.value);
+                return (
+                  <li
+                    key={opt.value}
+                    role="option"
+                    aria-selected={checked}
+                    onClick={() => !disabled && toggle(opt.value)}
+                    className={`px-3 py-2 text-sm cursor-pointer transition-colors flex items-center gap-2 hover:bg-hooman-border/50 ${
                       checked
-                        ? "bg-hooman-accent border-hooman-accent text-white"
-                        : "bg-hooman-surface border-hooman-border"
-                    }`}
-                    aria-hidden
+                        ? "bg-hooman-accent/20 text-hooman-accent"
+                        : "text-zinc-200"
+                    } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
                   >
-                    {checked ? (
-                      <Check className="w-3 h-3 shrink-0 stroke-[2.5]" />
-                    ) : null}
-                  </span>
-                  <span className="flex-1 truncate">{opt.label}</span>
-                </li>
-              );
-            })
-          )}
-        </ul>
-      )}
+                    <span
+                      className={`flex items-center justify-center w-5 h-5 rounded border shrink-0 ${
+                        checked
+                          ? "bg-hooman-accent border-hooman-accent text-white"
+                          : "bg-hooman-surface border-hooman-border"
+                      }`}
+                      aria-hidden
+                    >
+                      {checked ? (
+                        <Check className="w-3 h-3 shrink-0 stroke-[2.5]" />
+                      ) : null}
+                    </span>
+                    <span className="flex-1 truncate">{opt.label}</span>
+                  </li>
+                );
+              })
+            )}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }

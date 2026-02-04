@@ -30,7 +30,7 @@ export function Colleagues() {
   const capabilityOptions = useMemo(
     () =>
       capabilitiesList.map((c) => ({
-        value: `${c.integrationId}:${c.capability}`,
+        value: c.integrationId,
         label: c.capability,
       })),
     [capabilitiesList],
@@ -147,7 +147,7 @@ export function Colleagues() {
         )}
         <div className="space-y-3">
           <Input
-            placeholder="ID (e.g. communication_colleague)"
+            placeholder="ID (e.g. Engineer)"
             value={form.id ?? ""}
             onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))}
             disabled={editing !== "new"}
@@ -165,7 +165,7 @@ export function Colleagues() {
               typeof form.responsibilities === "string"
                 ? form.responsibilities
                 : Array.isArray(form.responsibilities)
-                  ? form.responsibilities.join("\n")
+                  ? (form.responsibilities as string[]).join("\n")
                   : ""
             }
             onChange={(e) =>

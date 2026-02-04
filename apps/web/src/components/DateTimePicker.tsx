@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Calendar, Check, X } from "lucide-react";
 import { Button } from "./Button";
 import { Input } from "./Input";
@@ -64,7 +65,10 @@ export function DateTimePicker({
   "aria-label": ariaLabel,
 }: DateTimePickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({ top: 0, left: 0 });
   const initial = value ? new Date(value) : new Date();
   const [viewYear, setViewYear] = useState(initial.getFullYear());
   const [viewMonth, setViewMonth] = useState(initial.getMonth());
@@ -78,15 +82,22 @@ export function DateTimePicker({
 
   const display = value ? formatDisplay(value) : placeholder;
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPopupPosition({
+      top: rect.bottom + 4,
+      left: rect.left,
+    });
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const inTrigger = containerRef.current?.contains(target);
+      const inPopup = popupRef.current?.contains(target);
+      if (!inTrigger && !inPopup) setOpen(false);
     }
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -171,6 +182,7 @@ export function DateTimePicker({
         </label>
       )}
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         aria-label={ariaLabel ?? label}
@@ -183,129 +195,136 @@ export function DateTimePicker({
         <span className={value ? "" : "text-hooman-muted"}>{display}</span>
         <Calendar className="w-4 h-4 shrink-0 text-hooman-muted" aria-hidden />
       </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          className="absolute z-10 mt-1 left-0 w-72 rounded-lg border border-hooman-border bg-hooman-surface shadow-lg p-3"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (viewMonth === 0) {
-                  setViewMonth(11);
-                  setViewYear((y) => y - 1);
-                } else setViewMonth((m) => m - 1);
-              }}
-              className="p-1.5 rounded text-hooman-muted hover:bg-hooman-border/50 hover:text-zinc-200"
-              aria-label="Previous month"
-            >
-              ←
-            </button>
-            <span className="text-sm font-medium text-white">
-              {MONTHS[viewMonth]} {viewYear}
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                if (viewMonth === 11) {
-                  setViewMonth(0);
-                  setViewYear((y) => y + 1);
-                } else setViewMonth((m) => m + 1);
-              }}
-              className="p-1.5 rounded text-hooman-muted hover:bg-hooman-border/50 hover:text-zinc-200"
-              aria-label="Next month"
-            >
-              →
-            </button>
-          </div>
-          <div className="grid grid-cols-7 gap-0.5 text-center text-xs text-hooman-muted mb-2">
-            {WEEKDAYS.map((w) => (
-              <span key={w} className="py-1">
-                {w}
+      {open &&
+        createPortal(
+          <div
+            ref={popupRef}
+            role="dialog"
+            aria-modal="true"
+            className="fixed w-72 rounded-lg border border-hooman-border bg-hooman-surface shadow-lg p-3 z-[100]"
+            style={{
+              top: popupPosition.top,
+              left: popupPosition.left,
+            }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (viewMonth === 0) {
+                    setViewMonth(11);
+                    setViewYear((y) => y - 1);
+                  } else setViewMonth((m) => m - 1);
+                }}
+                className="p-1.5 rounded text-hooman-muted hover:bg-hooman-border/50 hover:text-zinc-200"
+                aria-label="Previous month"
+              >
+                ←
+              </button>
+              <span className="text-sm font-medium text-white">
+                {MONTHS[viewMonth]} {viewYear}
               </span>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-0.5 mb-3">
-            {days.map((d, i) => {
-              const isEmpty = d.getTime() === 0;
-              const isCurrent =
-                !isEmpty &&
-                selectedDate &&
-                d.getDate() === selectedDate.getDate() &&
-                d.getMonth() === selectedDate.getMonth() &&
-                d.getFullYear() === selectedDate.getFullYear();
-              const isToday =
-                !isEmpty &&
-                d.getDate() === new Date().getDate() &&
-                d.getMonth() === new Date().getMonth() &&
-                d.getFullYear() === new Date().getFullYear();
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={isEmpty}
-                  onClick={() => handleDayClick(d)}
-                  className={`
+              <button
+                type="button"
+                onClick={() => {
+                  if (viewMonth === 11) {
+                    setViewMonth(0);
+                    setViewYear((y) => y + 1);
+                  } else setViewMonth((m) => m + 1);
+                }}
+                className="p-1.5 rounded text-hooman-muted hover:bg-hooman-border/50 hover:text-zinc-200"
+                aria-label="Next month"
+              >
+                →
+              </button>
+            </div>
+            <div className="grid grid-cols-7 gap-0.5 text-center text-xs text-hooman-muted mb-2">
+              {WEEKDAYS.map((w) => (
+                <span key={w} className="py-1">
+                  {w}
+                </span>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-0.5 mb-3">
+              {days.map((d, i) => {
+                const isEmpty = d.getTime() === 0;
+                const isCurrent =
+                  !isEmpty &&
+                  selectedDate &&
+                  d.getDate() === selectedDate.getDate() &&
+                  d.getMonth() === selectedDate.getMonth() &&
+                  d.getFullYear() === selectedDate.getFullYear();
+                const isToday =
+                  !isEmpty &&
+                  d.getDate() === new Date().getDate() &&
+                  d.getMonth() === new Date().getMonth() &&
+                  d.getFullYear() === new Date().getFullYear();
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={isEmpty}
+                    onClick={() => handleDayClick(d)}
+                    className={`
                     py-1.5 rounded text-sm
                     ${isEmpty ? "invisible" : "hover:bg-hooman-border/50 text-zinc-200"}
                     ${isCurrent ? "bg-hooman-accent/30 text-hooman-accent font-medium" : ""}
                     ${!isEmpty && !isCurrent && isToday ? "ring-1 ring-hooman-accent/50" : ""}
                   `}
-                >
-                  {isEmpty ? "" : d.getDate()}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex items-center gap-2 pt-2 border-t border-hooman-border">
-            <span className="text-xs text-hooman-muted">Time</span>
-            <Input
-              type="number"
-              min={0}
-              max={23}
-              value={hour}
-              onChange={(e) =>
-                handleTimeChange(parseInt(e.target.value, 10) || 0, minute)
-              }
-              className="w-14 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <span className="text-hooman-muted">:</span>
-            <Input
-              type="number"
-              min={0}
-              max={59}
-              value={minute}
-              onChange={(e) =>
-                handleTimeChange(hour, parseInt(e.target.value, 10) || 0)
-              }
-              className="w-14 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-            />
-            <div className="ml-auto flex items-center gap-1.5">
-              <Button
-                variant="danger"
-                iconOnly
-                icon={<X className="w-4 h-4" aria-hidden />}
-                onClick={() => setOpen(false)}
-                aria-label="Cancel"
-              />
-              {selectedDate && (
-                <Button
-                  variant="success"
-                  iconOnly
-                  icon={<Check className="w-4 h-4" aria-hidden />}
-                  onClick={() => {
-                    commit(selectedDate, hour, minute);
-                    setOpen(false);
-                  }}
-                  aria-label="Apply"
-                />
-              )}
+                  >
+                    {isEmpty ? "" : d.getDate()}
+                  </button>
+                );
+              })}
             </div>
-          </div>
-        </div>
-      )}
+            <div className="flex items-center gap-2 pt-2 border-t border-hooman-border">
+              <span className="text-xs text-hooman-muted">Time</span>
+              <Input
+                type="number"
+                min={0}
+                max={23}
+                value={hour}
+                onChange={(e) =>
+                  handleTimeChange(parseInt(e.target.value, 10) || 0, minute)
+                }
+                className="w-14 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <span className="text-hooman-muted">:</span>
+              <Input
+                type="number"
+                min={0}
+                max={59}
+                value={minute}
+                onChange={(e) =>
+                  handleTimeChange(hour, parseInt(e.target.value, 10) || 0)
+                }
+                className="w-14 min-w-0 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button
+                  variant="danger"
+                  iconOnly
+                  icon={<X className="w-4 h-4" aria-hidden />}
+                  onClick={() => setOpen(false)}
+                  aria-label="Cancel"
+                />
+                {selectedDate && (
+                  <Button
+                    variant="success"
+                    iconOnly
+                    icon={<Check className="w-4 h-4" aria-hidden />}
+                    onClick={() => {
+                      commit(selectedDate, hour, minute);
+                      setOpen(false);
+                    }}
+                    aria-label="Apply"
+                  />
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

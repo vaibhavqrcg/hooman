@@ -1,4 +1,5 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useLayoutEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
 export interface SelectOption<T extends string = string> {
@@ -28,20 +29,35 @@ export function Select<T extends string = string>({
   "aria-label": ariaLabel,
 }: SelectProps<T>) {
   const [open, setOpen] = useState(false);
+  const [popupPosition, setPopupPosition] = useState({
+    top: 0,
+    left: 0,
+    minWidth: 0,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popupRef = useRef<HTMLUListElement>(null);
 
   const selected = options.find((o) => o.value === value);
   const display = selected?.label ?? placeholder;
 
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPopupPosition({
+      top: rect.bottom + 4,
+      left: rect.left,
+      minWidth: rect.width,
+    });
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     function handleClickOutside(e: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      const inTrigger = containerRef.current?.contains(target);
+      const inPopup = popupRef.current?.contains(target);
+      if (!inTrigger && !inPopup) setOpen(false);
     }
     function handleEscape(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);
@@ -65,6 +81,7 @@ export function Select<T extends string = string>({
         </label>
       )}
       <button
+        ref={triggerRef}
         type="button"
         id={id}
         aria-label={ariaLabel ?? label}
@@ -80,31 +97,39 @@ export function Select<T extends string = string>({
           aria-hidden
         />
       </button>
-      {open && (
-        <ul
-          role="listbox"
-          className="absolute z-10 mt-1 w-full rounded-lg border border-hooman-border bg-hooman-surface py-1 shadow-lg max-h-60 overflow-auto"
-        >
-          {options.map((opt) => (
-            <li
-              key={opt.value}
-              role="option"
-              aria-selected={opt.value === value}
-              onClick={() => {
-                onChange(opt.value as T);
-                setOpen(false);
-              }}
-              className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
-                opt.value === value
-                  ? "bg-hooman-accent/20 text-hooman-accent"
-                  : "text-zinc-200 hover:bg-hooman-border/50"
-              }`}
-            >
-              {opt.label}
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        createPortal(
+          <ul
+            ref={popupRef}
+            role="listbox"
+            className="fixed rounded-lg border border-hooman-border bg-hooman-surface py-1 shadow-lg max-h-60 overflow-auto z-[100]"
+            style={{
+              top: popupPosition.top,
+              left: popupPosition.left,
+              minWidth: popupPosition.minWidth,
+            }}
+          >
+            {options.map((opt) => (
+              <li
+                key={opt.value}
+                role="option"
+                aria-selected={opt.value === value}
+                onClick={() => {
+                  onChange(opt.value as T);
+                  setOpen(false);
+                }}
+                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
+                  opt.value === value
+                    ? "bg-hooman-accent/20 text-hooman-accent"
+                    : "text-zinc-200 hover:bg-hooman-border/50"
+                }`}
+              >
+                {opt.label}
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }

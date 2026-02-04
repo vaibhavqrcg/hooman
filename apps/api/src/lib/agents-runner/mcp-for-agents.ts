@@ -20,15 +20,14 @@ Be conversational and human-first. Use memory context when provided to tailor an
 When the user's request fits a specialized colleague you can hand off to, do so. Otherwise respond yourself.
 If you need an external capability (e.g. send email, Slack), say so and ask for approval; never assume.`;
 
-/** Parse allowed_capabilities ("integrationId:capability") to set of connection IDs. */
+/** allowed_capabilities are connection IDs. */
 function getConnectionIdsFromAllowedCapabilities(
   allowedCapabilities: string[],
 ): Set<string> {
   const ids = new Set<string>();
-  for (const entry of allowedCapabilities ?? []) {
-    const colon = entry.indexOf(":");
-    if (colon > 0) ids.add(entry.slice(0, colon));
-    else if (entry.trim()) ids.add(entry.trim());
+  for (const id of allowedCapabilities ?? []) {
+    const trimmed = id.trim();
+    if (trimmed) ids.add(trimmed);
   }
   return ids;
 }
