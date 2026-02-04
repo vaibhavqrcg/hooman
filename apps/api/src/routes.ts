@@ -9,11 +9,8 @@ import type { ColleagueEngine } from "./lib/colleagues/index.js";
 import type { Scheduler } from "./lib/scheduler/index.js";
 import type { MCPClientLayer } from "./lib/mcp-client/index.js";
 import type { ColleagueConfig } from "./lib/types/index.js";
-import { createHoomanAgent, runChat } from "./lib/agents-runner/index.js";
 import { randomUUID } from "crypto";
 import { getConfig, updateConfig } from "./config.js";
-
-const CHAT_THREAD_LIMIT = 30;
 
 interface AppContext {
   eventRouter: EventRouter;
@@ -26,6 +23,20 @@ interface AppContext {
   >;
   scheduler: Scheduler;
   mcpClient: MCPClientLayer;
+  pendingChatResults: Map<
+    string,
+    {
+      resolve: (value: {
+        eventId: string;
+        message: {
+          role: "assistant";
+          text: string;
+          lastAgentName?: string;
+        };
+      }) => void;
+      reject: (reason: unknown) => void;
+    }
+  >;
 }
 
 let killSwitchEnabled = false;
@@ -38,6 +49,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     colleagueEngine,
     scheduler,
     mcpClient,
+    pendingChatResults,
   } = ctx;
 
   // Health
@@ -92,7 +104,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     res.json({ cleared: true });
   });
 
-  // Chat: run Hooman agent (with colleague handoffs when configured) and return response
+  // Chat: dispatch message.sent to Event Router → chat handler runs agents-runner and resolves pending (PRD: event-driven path)
   app.post("/api/chat", async (req: Request, res: Response): Promise<void> => {
     if (killSwitchEnabled) {
       res.status(503).json({ error: "Hooman is paused (kill switch)." });
@@ -105,85 +117,37 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     }
     const eventId = randomUUID();
     const userId = "default";
-    const config = getConfig();
+
+    const resultPromise = new Promise<{
+      eventId: string;
+      message: { role: "assistant"; text: string; lastAgentName?: string };
+    }>((resolve, reject) => {
+      pendingChatResults.set(eventId, { resolve, reject });
+    });
+
+    await eventRouter.dispatch(
+      {
+        source: "api",
+        type: "message.sent",
+        payload: { text, userId },
+      },
+      { correlationId: eventId },
+    );
 
     try {
-      const recent = await context.getRecentMessages(userId, CHAT_THREAD_LIMIT);
-      const thread = recent.map((m) => ({ role: m.role, content: m.text }));
-
-      const memories = await context.search(text, { userId, limit: 5 });
-      const memoryContext =
-        memories.length > 0
-          ? memories.map((m) => `- ${m.memory}`).join("\n")
-          : "";
-
-      const colleagues = colleagueEngine.getAll();
-      const agent = createHoomanAgent(colleagues, {
-        apiKey: config.OPENAI_API_KEY || undefined,
-        model: config.OPENAI_MODEL,
-      });
-
-      const { finalOutput, lastAgentName, newItems } = await runChat(
-        agent,
-        thread,
-        text,
-        {
-          memoryContext,
-          apiKey: config.OPENAI_API_KEY || undefined,
-          model: config.OPENAI_MODEL || undefined,
-        },
-      );
-
-      const assistantText =
-        finalOutput?.trim() ||
-        "I didn't get a clear response. Try rephrasing or check your API key and model settings.";
-
-      const handoffs = (newItems ?? []).filter(
-        (i) =>
-          i.type === "handoff_call_item" || i.type === "handoff_output_item",
-      );
-      hooman.appendAuditEntry({
-        type: "agent_run",
-        payload: {
-          userInput: text,
-          response: assistantText,
-          lastAgentName: lastAgentName ?? "Hooman",
-          handoffs: handoffs.map((h) => ({
-            type: h.type,
-            from: h.agent?.name ?? h.sourceAgent?.name,
-            to: h.targetAgent?.name,
-          })),
-        },
-      });
-
-      await eventRouter.dispatch({
-        source: "api",
-        type: "chat.turn_completed",
-        payload: { userId, userText: text, assistantText },
-      });
-
+      const result = await resultPromise;
       res.json({
+        eventId: result.eventId,
+        message: result.message,
+      });
+    } catch (err) {
+      debug("chat handler error: %o", err);
+      res.status(500).json({
         eventId,
         message: {
           role: "assistant" as const,
-          text: assistantText,
-          lastAgentName: lastAgentName ?? undefined,
+          text: "Something went wrong. Check API logs.",
         },
-      });
-    } catch (err) {
-      debug("agents run error: %o", err);
-      const msg = (err as Error).message;
-      const fallback = !config.OPENAI_API_KEY?.trim()
-        ? "[Hooman] No LLM API key configured. Set it in Settings to enable chat."
-        : `Something went wrong: ${msg}. Check API logs.`;
-      await eventRouter.dispatch({
-        source: "api",
-        type: "chat.turn_completed",
-        payload: { userId, userText: text, assistantText: fallback },
-      });
-      res.json({
-        eventId,
-        message: { role: "assistant" as const, text: fallback },
       });
     }
   });

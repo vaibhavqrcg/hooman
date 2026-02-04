@@ -28,6 +28,61 @@ export interface ScheduledEvent extends BaseEvent {
 
 export type IncomingEvent = BaseEvent | UIChatEvent | ScheduledEvent;
 
+// Normalized events: common payload shape regardless of source (PRD §8)
+export type NormalizedPayloadKind =
+  | "message"
+  | "scheduled_task"
+  | "integration_event"
+  | "internal";
+
+export interface NormalizedMessagePayload {
+  kind: "message";
+  text: string;
+  userId: string;
+}
+
+export interface NormalizedScheduledTaskPayload {
+  kind: "scheduled_task";
+  execute_at: string;
+  intent: string;
+  context: Record<string, unknown>;
+}
+
+export interface NormalizedIntegrationEventPayload {
+  kind: "integration_event";
+  integrationId: string;
+  originalType: string;
+  payload: Record<string, unknown>;
+}
+
+export interface NormalizedInternalPayload {
+  kind: "internal";
+  data: Record<string, unknown>;
+}
+
+export type NormalizedPayload =
+  | NormalizedMessagePayload
+  | NormalizedScheduledTaskPayload
+  | NormalizedIntegrationEventPayload
+  | NormalizedInternalPayload;
+
+export interface NormalizedEvent {
+  id: string;
+  source: EventSource;
+  type: string;
+  payload: NormalizedPayload;
+  timestamp: string;
+  priority: number;
+}
+
+/** Raw input for dispatch; normalizer converts to NormalizedEvent. */
+export interface RawDispatchInput {
+  source: EventSource;
+  type: string;
+  payload: Record<string, unknown>;
+  priority?: number;
+}
+
 // Decisions
 export type DecisionType =
   | "ignore"

@@ -1,4 +1,4 @@
-import type { IncomingEvent } from "../types/index.js";
+import type { RawDispatchInput } from "../types/index.js";
 import { randomUUID } from "crypto";
 import type { ScheduleStore } from "../schedule-store/index.js";
 
@@ -9,7 +9,9 @@ export interface ScheduledTask {
   context: Record<string, unknown>;
 }
 
-export type ScheduleEmit = (event: IncomingEvent) => void;
+export type ScheduleEmit = (
+  raw: RawDispatchInput,
+) => void | Promise<void | string>;
 
 export class Scheduler {
   private tasks: ScheduledTask[] = [];
@@ -73,8 +75,7 @@ export class Scheduler {
     for (const t of due) {
       this.tasks = this.tasks.filter((x) => x.id !== t.id);
       await this.store.remove(t.id);
-      this.emit({
-        id: randomUUID(),
+      await this.emit({
         source: "scheduler",
         type: "task.scheduled",
         payload: {
@@ -82,7 +83,6 @@ export class Scheduler {
           intent: t.intent,
           context: t.context,
         },
-        timestamp: new Date().toISOString(),
       });
     }
   }

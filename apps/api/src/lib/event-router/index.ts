@@ -1,10 +1,14 @@
 import createDebug from "debug";
-import type { IncomingEvent } from "../types/index.js";
+import type {
+  RawDispatchInput,
+  NormalizedEvent,
+  NormalizedPayload,
+} from "../types/index.js";
 import { randomUUID } from "crypto";
 
 const debug = createDebug("hooman:event-router");
 
-export type EventHandler = (event: IncomingEvent) => void | Promise<void>;
+export type EventHandler = (event: NormalizedEvent) => void | Promise<void>;
 
 const DEFAULT_PRIORITY: Record<string, number> = {
   "message.sent": 10,
@@ -15,18 +19,63 @@ const DEFAULT_PRIORITY: Record<string, number> = {
 const seenEventKeys = new Set<string>();
 const DEDUP_TTL_MS = 60_000;
 
-function eventKey(e: IncomingEvent): string {
+function eventKey(e: NormalizedEvent): string {
   return `${e.source}:${e.type}:${JSON.stringify(e.payload)}`;
 }
 
-function normalizePriority(e: IncomingEvent): number {
-  if (e.priority != null) return e.priority;
-  return DEFAULT_PRIORITY[e.type] ?? 5;
+function normalizePriority(raw: RawDispatchInput): number {
+  if (raw.priority != null) return raw.priority;
+  return DEFAULT_PRIORITY[raw.type] ?? 5;
+}
+
+/**
+ * Normalize raw dispatch input into a canonical payload shape (PRD §8).
+ * All handlers receive NormalizedEvent so sources (UI, API, MCP, scheduler) are handled uniformly.
+ */
+function normalizePayload(
+  source: RawDispatchInput["source"],
+  type: string,
+  payload: Record<string, unknown>,
+): NormalizedPayload {
+  if (type === "message.sent") {
+    const text = typeof payload.text === "string" ? payload.text : "";
+    const userId =
+      typeof payload.userId === "string" ? payload.userId : "default";
+    return { kind: "message", text, userId };
+  }
+  if (type === "task.scheduled") {
+    const execute_at =
+      typeof payload.execute_at === "string" ? payload.execute_at : "";
+    const intent = typeof payload.intent === "string" ? payload.intent : "";
+    const context =
+      payload.context && typeof payload.context === "object"
+        ? (payload.context as Record<string, unknown>)
+        : {};
+    return { kind: "scheduled_task", execute_at, intent, context };
+  }
+  if (type === "chat.turn_completed") {
+    return { kind: "internal", data: payload };
+  }
+  // Future: MCP/integration events → kind: "integration_event"
+  if (
+    source === "mcp" &&
+    typeof payload.integrationId === "string" &&
+    typeof payload.originalType === "string"
+  ) {
+    return {
+      kind: "integration_event",
+      integrationId: payload.integrationId as string,
+      originalType: payload.originalType as string,
+      payload: (payload.payload as Record<string, unknown>) ?? {},
+    };
+  }
+  // Unknown: wrap as internal
+  return { kind: "internal", data: payload };
 }
 
 export class EventRouter {
   private handlers: EventHandler[] = [];
-  private queue: IncomingEvent[] = [];
+  private queue: NormalizedEvent[] = [];
   private processing = false;
 
   register(handler: EventHandler): () => void {
@@ -36,20 +85,25 @@ export class EventRouter {
     };
   }
 
+  /**
+   * Dispatch a raw event. It is normalized (payload shape), deduped, prioritized, then sent to all handlers.
+   */
   async dispatch(
-    raw: Omit<IncomingEvent, "id" | "timestamp">,
+    raw: RawDispatchInput,
     options?: { correlationId?: string },
   ): Promise<string> {
     const id = options?.correlationId ?? randomUUID();
-    const event: IncomingEvent = {
-      ...raw,
+    const timestamp = new Date().toISOString();
+    const priority = normalizePriority(raw);
+    const payload = normalizePayload(raw.source, raw.type, raw.payload);
+
+    const event: NormalizedEvent = {
       id,
-      timestamp: new Date().toISOString(),
-      priority: normalizePriority({
-        ...raw,
-        id: "",
-        timestamp: "",
-      } as IncomingEvent),
+      source: raw.source,
+      type: raw.type,
+      payload,
+      timestamp,
+      priority,
     };
 
     const key = eventKey(event);
@@ -58,7 +112,7 @@ export class EventRouter {
     setTimeout(() => seenEventKeys.delete(key), DEDUP_TTL_MS);
 
     this.queue.push(event);
-    this.queue.sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    this.queue.sort((a, b) => b.priority - a.priority);
     await this.processQueue();
     return id;
   }

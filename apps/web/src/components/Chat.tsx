@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Trash2, ListOrdered, X } from "lucide-react";
+import { Trash2, ListOrdered, X, Loader2 } from "lucide-react";
 import type { ChatMessage } from "../types";
 import { sendMessage } from "../api";
 import { useDialog } from "./Dialog";
@@ -191,8 +191,9 @@ export function Chat({
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-hooman-surface border border-hooman-border rounded-2xl px-4 py-2.5 text-hooman-muted text-sm">
-              Thinking…
+            <div className="flex items-center gap-2 bg-hooman-surface border border-hooman-border rounded-2xl px-4 py-2.5 text-hooman-muted text-sm">
+              <Loader2 className="w-4 h-4 shrink-0 animate-spin" aria-hidden />
+              <span>Thinking…</span>
             </div>
           </div>
         )}

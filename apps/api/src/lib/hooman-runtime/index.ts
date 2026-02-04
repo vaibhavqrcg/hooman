@@ -1,5 +1,5 @@
 import type {
-  IncomingEvent,
+  NormalizedEvent,
   Decision,
   AuditLogEntry,
   ColleagueConfig,
@@ -79,13 +79,15 @@ export class HoomanRuntime {
     this.onResponse.forEach((h) => h(payload));
   }
 
-  private async handleEvent(event: IncomingEvent): Promise<void> {
+  private async handleEvent(event: NormalizedEvent): Promise<void> {
     const userId = this.config.userId ?? DEFAULT_USER_ID;
 
-    if (event.source === "ui" && event.type === "message.sent") {
-      const text = (event.payload as { text: string }).text;
+    // UI-originated chat (real-time); API-originated chat is handled by the chat handler in index/routes
+    if (event.payload.kind === "message" && event.source === "ui") {
+      const { text } = event.payload;
+      const msgUserId = event.payload.userId ?? userId;
       try {
-        await this.handleTextMessage(event, text, userId);
+        await this.handleTextMessage(event, text, msgUserId);
       } catch (err) {
         debug("handleEvent error: %o", err);
         this.emit({
@@ -98,12 +100,8 @@ export class HoomanRuntime {
       return;
     }
 
-    if (event.source === "scheduler" && event.type === "task.scheduled") {
-      const payload = event.payload as {
-        execute_at: string;
-        intent: string;
-        context: Record<string, unknown>;
-      };
+    if (event.payload.kind === "scheduled_task") {
+      const payload = event.payload;
       this.appendAuditEntry({
         type: "scheduled_task",
         payload: {
@@ -135,7 +133,7 @@ export class HoomanRuntime {
   }
 
   private async handleTextMessage(
-    event: IncomingEvent,
+    event: NormalizedEvent,
     text: string,
     userId: string,
   ): Promise<void> {
