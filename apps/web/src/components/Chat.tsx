@@ -50,7 +50,7 @@ export function Chat({
           msg.startsWith("500") ||
           msg.startsWith("502") ||
           msg.startsWith("503")
-            ? " Start the API with: npm run dev"
+            ? " Start the API with: yarn dev"
             : "";
         setMessages((prev) => [
           ...prev,

@@ -330,7 +330,7 @@ export function Capabilities() {
               />
               <Input
                 label="Command"
-                placeholder="npx"
+                placeholder="yarn"
                 value={form.command ?? ""}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, command: e.target.value }))

@@ -20,7 +20,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: dev
-    working_dir: /app/apps/api
+    working_dir: /app
     ports:
       - "3000:3000"
     environment:
@@ -36,7 +36,7 @@ services:
         condition: service_started
       mongodb:
         condition: service_started
-    command: ["npx", "tsx", "watch", "src/index.ts"]
+    command: ["yarn", "dev"]
 
   web-dev:
     profiles:
@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: dev
-    working_dir: /app/apps/web
+    working_dir: /app
     ports:
       - "5173:5173"
     environment:
@@ -54,7 +54,7 @@ services:
       - ./apps/web:/app/apps/web
     depends_on:
       - api-dev
-    command: ["npx", "vite", "--host", "0.0.0.0"]
+    command: ["yarn", "dev:web"]
 
   # --- Production profile: API + nginx serving built React ---
   api:

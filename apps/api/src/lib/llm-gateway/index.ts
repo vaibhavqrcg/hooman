@@ -4,7 +4,6 @@ export interface LLMMessage {
 }
 
 export interface LLMGatewayConfig {
-  provider?: "openai" | "anthropic";
   apiKey?: string;
   model?: string;
   maxTokens?: number;
@@ -22,7 +21,6 @@ export class LLMGateway {
 
   constructor(config: LLMGatewayConfig = {}) {
     this.config = {
-      provider: config.provider ?? "openai",
       apiKey: config.apiKey ?? "",
       model: config.model ?? DEFAULT_MODEL,
       maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -32,16 +30,13 @@ export class LLMGateway {
   }
 
   async complete(messages: LLMMessage[]): Promise<string> {
-    if (!this.config.apiKey && this.config.provider === "openai") {
+    if (!this.config.apiKey) {
       return "[Hooman] No LLM API key configured. Set it in Settings to enable reasoning. I can still chat and remember things in this session.";
     }
-    if (this.config.provider === "openai") {
-      if (this.config.webSearch) {
-        return this.completeOpenAIResponsesAPI(messages);
-      }
-      return this.completeOpenAI(messages);
+    if (this.config.webSearch) {
+      return this.completeOpenAIResponsesAPI(messages);
     }
-    throw new Error(`Unsupported LLM provider: ${this.config.provider}`);
+    return this.completeOpenAI(messages);
   }
 
   private async completeOpenAI(messages: LLMMessage[]): Promise<string> {

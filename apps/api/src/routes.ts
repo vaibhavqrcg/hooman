@@ -47,6 +47,11 @@ interface AppContext {
 
 let killSwitchEnabled = false;
 
+function getParam(req: Request, key: string): string {
+  const v = req.params[key];
+  return (Array.isArray(v) ? v[0] : v) ?? "";
+}
+
 export function registerRoutes(app: Express, ctx: AppContext): void {
   const {
     eventRouter,
@@ -202,7 +207,8 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   app.patch(
     "/api/colleagues/:id",
     async (req: Request, res: Response): Promise<void> => {
-      const existing = colleagueEngine.getById(req.params.id);
+      const id = getParam(req, "id");
+      const existing = colleagueEngine.getById(id);
       if (!existing) {
         res.status(404).json({ error: "Colleague not found." });
         return;
@@ -210,16 +216,16 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
       await colleagueEngine.addOrUpdate({
         ...existing,
         ...req.body,
-        id: req.params.id,
+        id,
       });
-      res.json({ colleague: colleagueEngine.getById(req.params.id) });
+      res.json({ colleague: colleagueEngine.getById(id) });
     },
   );
 
   app.delete(
     "/api/colleagues/:id",
     async (req: Request, res: Response): Promise<void> => {
-      const ok = await colleagueEngine.remove(req.params.id);
+      const ok = await colleagueEngine.remove(getParam(req, "id"));
       if (!ok) {
         res.status(404).json({ error: "Colleague not found." });
         return;
@@ -332,7 +338,8 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   app.patch(
     "/api/mcp/connections/:id",
     async (req: Request, res: Response): Promise<void> => {
-      const existing = await mcpConnectionsStore.getById(req.params.id);
+      const id = getParam(req, "id");
+      const existing = await mcpConnectionsStore.getById(id);
       if (!existing) {
         res.status(404).json({ error: "MCP connection not found." });
         return;
@@ -351,7 +358,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   app.delete(
     "/api/mcp/connections/:id",
     async (req: Request, res: Response): Promise<void> => {
-      const ok = await mcpConnectionsStore.remove(req.params.id);
+      const ok = await mcpConnectionsStore.remove(getParam(req, "id"));
       if (!ok) {
         res.status(404).json({ error: "MCP connection not found." });
         return;
@@ -389,7 +396,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   app.delete(
     "/api/schedule/:id",
     async (req: Request, res: Response): Promise<void> => {
-      const ok = await scheduler.cancel(req.params.id);
+      const ok = await scheduler.cancel(getParam(req, "id"));
       if (!ok) {
         res.status(404).json({ error: "Scheduled task not found." });
         return;
