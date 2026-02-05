@@ -27,8 +27,11 @@ export async function initColleagueStore(uri: string): Promise<ColleagueStore> {
         id: doc.id,
         description: doc.description ?? "",
         responsibilities: doc.responsibilities ?? "",
-        allowed_capabilities: Array.isArray(doc.allowed_capabilities)
-          ? doc.allowed_capabilities
+        allowed_connections: Array.isArray(doc.allowed_connections)
+          ? doc.allowed_connections
+          : [],
+        allowed_skills: Array.isArray(doc.allowed_skills)
+          ? doc.allowed_skills
           : [],
         memory: doc.memory ?? { scope: "role" },
         reporting: doc.reporting ?? { on: ["task_complete", "uncertainty"] },
@@ -42,8 +45,11 @@ export async function initColleagueStore(uri: string): Promise<ColleagueStore> {
         id: doc.id,
         description: doc.description ?? "",
         responsibilities: doc.responsibilities ?? "",
-        allowed_capabilities: Array.isArray(doc.allowed_capabilities)
-          ? doc.allowed_capabilities
+        allowed_connections: Array.isArray(doc.allowed_connections)
+          ? doc.allowed_connections
+          : [],
+        allowed_skills: Array.isArray(doc.allowed_skills)
+          ? doc.allowed_skills
           : [],
         memory: doc.memory ?? { scope: "role" },
         reporting: doc.reporting ?? { on: ["task_complete", "uncertainty"] },

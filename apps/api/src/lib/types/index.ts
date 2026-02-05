@@ -133,7 +133,10 @@ export interface ColleagueConfig {
   id: string;
   description: string;
   responsibilities: string;
-  allowed_capabilities: string[];
+  /** MCP connection IDs attached to this colleague. */
+  allowed_connections: string[];
+  /** Installed skill IDs attached to this colleague. */
+  allowed_skills?: string[];
   memory: { scope: "role" | "global" };
   reporting: {
     on: ("task_complete" | "uncertainty" | "error")[];

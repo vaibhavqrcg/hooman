@@ -20,7 +20,7 @@ Be conversational and human-first. Use memory context when provided to tailor an
 When the user's request fits a specialized colleague you can hand off to, do so. Otherwise respond yourself.
 If you need an external capability (e.g. send email, Slack), say so and ask for approval; never assume.`;
 
-/** allowed_capabilities are connection IDs. */
+/** allowed_connections are connection IDs. */
 function getConnectionIdsFromAllowedCapabilities(
   allowedCapabilities: string[],
 ): Set<string> {
@@ -127,7 +127,7 @@ function buildMcpFromConnections(connections: MCPConnection[]): {
 
 /**
  * Create the Hooman agent with colleague handoffs, attaching MCP servers and tools
- * per colleague based on their allowed_capabilities. Connects MCP servers before
+ * per colleague based on their allowed_connections. Connects MCP servers before
  * building the agent. Call closeMcp() after run to close servers.
  */
 export async function createHoomanAgentWithMcp(
@@ -152,7 +152,7 @@ export async function createHoomanAgentWithMcp(
 
   const colleagueAgents = colleagues.map((p) => {
     const connectionIds = getConnectionIdsFromAllowedCapabilities(
-      p.allowed_capabilities ?? [],
+      p.allowed_connections ?? [],
     );
     const colleagueServers: MCPServer[] = [];
     const colleagueTools: ReturnType<typeof hostedMcpTool>[] = [];

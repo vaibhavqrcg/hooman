@@ -11,10 +11,12 @@ import type { ColleagueConfig } from "../types";
 import {
   getColleagues,
   getCapabilitiesAvailable,
+  getSkillsList,
   createColleague,
   updateColleague,
   deleteColleague,
 } from "../api";
+import type { SkillEntry } from "../api";
 
 export function Colleagues() {
   const dialog = useDialog();
@@ -26,6 +28,7 @@ export function Colleagues() {
   const [capabilitiesList, setCapabilitiesList] = useState<
     { integrationId: string; capability: string }[]
   >([]);
+  const [skillsList, setSkillsList] = useState<SkillEntry[]>([]);
 
   const capabilityOptions = useMemo(
     () =>
@@ -34,6 +37,15 @@ export function Colleagues() {
         label: c.capability,
       })),
     [capabilitiesList],
+  );
+
+  const skillOptions = useMemo(
+    () =>
+      skillsList.map((s) => ({
+        value: s.id,
+        label: s.name,
+      })),
+    [skillsList],
   );
 
   function load() {
@@ -54,14 +66,20 @@ export function Colleagues() {
     );
   }
 
+  function loadSkills() {
+    getSkillsList().then((r) => setSkillsList(r.skills ?? []));
+  }
+
   function startAdd() {
     loadCapabilities();
+    loadSkills();
     setEditing("new");
     setForm({
       id: "",
       description: "",
       responsibilities: "",
-      allowed_capabilities: [],
+      allowed_connections: [],
+      allowed_skills: [],
       memory: { scope: "role" },
       reporting: { on: ["task_complete", "uncertainty"] },
     });
@@ -69,6 +87,7 @@ export function Colleagues() {
 
   function startEdit(p: ColleagueConfig) {
     loadCapabilities();
+    loadSkills();
     setEditing(p.id);
     setForm({ ...p });
   }
@@ -183,17 +202,28 @@ export function Colleagues() {
             rows={3}
           />
           <MultiSelect
-            label="Allowed capabilities"
+            label="Connections (MCP)"
             value={
-              Array.isArray(form.allowed_capabilities)
-                ? form.allowed_capabilities
+              Array.isArray(form.allowed_connections)
+                ? form.allowed_connections
                 : []
             }
             options={capabilityOptions}
             onChange={(selected) =>
-              setForm((f) => ({ ...f, allowed_capabilities: selected }))
+              setForm((f) => ({ ...f, allowed_connections: selected }))
             }
-            placeholder="Pick capabilities for this colleague"
+            placeholder="Pick MCP connections for this colleague"
+          />
+          <MultiSelect
+            label="Skills"
+            value={
+              Array.isArray(form.allowed_skills) ? form.allowed_skills : []
+            }
+            options={skillOptions}
+            onChange={(selected) =>
+              setForm((f) => ({ ...f, allowed_skills: selected }))
+            }
+            placeholder="Pick installed skills for this colleague"
           />
         </div>
       </Modal>
