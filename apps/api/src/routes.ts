@@ -80,7 +80,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     res.json({ status: "ok", killSwitch: killSwitchEnabled });
   });
 
-  // Configuration (Settings UI: API key, embedding model, LLM model, web search, MCP; QDRANT_URL and PORT are .env-only)
+  // Configuration (Settings UI: API key, embedding model, LLM model, web search, MCP; PORT is .env-only)
   app.get("/api/config", (_req: Request, res: Response) => {
     const c = getConfig();
     res.json({
@@ -184,7 +184,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     },
   );
 
-  // Chat history (context reads from MongoDB when set, else Mem0); enriches messages with attachment meta for UI
+  // Chat history (context reads from SQLite when set, else Mem0); enriches messages with attachment meta for UI
   app.get("/api/chat/history", async (req: Request, res: Response) => {
     const userId = (req.query.userId as string) || "default";
     const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
@@ -236,7 +236,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     res.json({ cleared: true });
   });
 
-  // Upload chat attachments (multipart); stored on server and in Mongo; returns IDs for sending with messages
+  // Upload chat attachments (multipart); stored on server and in DB; returns IDs for sending with messages
   app.post(
     "/api/chat/attachments",
     upload.array("files", 10),
@@ -580,7 +580,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     },
   );
 
-  // Skills: list from ~/.agents filesystem; add/remove via npx skills CLI
+  // Skills: list from project .agents/skills; add/remove via npx skills CLI (project-local)
   app.get("/api/skills/list", async (_req: Request, res: Response) => {
     try {
       const skills = await listSkillsFromFs();
@@ -617,11 +617,7 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.post("/api/skills/add", async (req: Request, res: Response) => {
-    const body = req.body as {
-      package?: string;
-      global?: boolean;
-      skills?: string[];
-    };
+    const body = req.body as { package?: string; skills?: string[] };
     const pkg = body?.package;
     if (!pkg || typeof pkg !== "string" || !pkg.trim()) {
       res.status(400).json({ error: "Missing or invalid 'package'." });
@@ -630,7 +626,6 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
     try {
       const result = await addSkill({
         package: pkg.trim(),
-        global: Boolean(body?.global),
         skills: Array.isArray(body?.skills) ? body.skills : undefined,
       });
       res.json({
@@ -649,14 +644,14 @@ export function registerRoutes(app: Express, ctx: AppContext): void {
   });
 
   app.post("/api/skills/remove", async (req: Request, res: Response) => {
-    const body = req.body as { skills?: string[]; global?: boolean };
+    const body = req.body as { skills?: string[] };
     const skills = Array.isArray(body?.skills) ? body.skills : [];
     if (skills.length === 0) {
       res.status(400).json({ error: "Missing or invalid 'skills' array." });
       return;
     }
     try {
-      const result = await removeSkills(skills, Boolean(body?.global));
+      const result = await removeSkills(skills);
       res.json({
         output: result.stdout,
         error: result.stderr.trim() || undefined,

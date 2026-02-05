@@ -20,7 +20,7 @@ Build a team of AI colleagues—each with their own capabilities and skills—an
 
 ## Why Hooman? ✨
 
-You don’t manage a dozen bots. You have **one conversation** with Hooman. Want a report drafted? A meeting summarized? Research done? You say it. Hooman either does it or delegates to a colleague who can (fetch, filesystem, custom MCP servers, installed skills). You get one place to chat, schedule tasks, and see what happened—without talking to individual agents.
+You don't manage a dozen bots. You have **one conversation** with Hooman. Want a report drafted? A meeting summarized? Research done? You say it. Hooman either does it or delegates to a colleague who can (fetch, filesystem, custom MCP servers, installed skills). You get one place to chat, schedule tasks, and see what happened—without talking to individual agents.
 
 - **🚪 One front door** — Chat, schedule, and inspect everything through Hooman.
 - **🦸 Colleagues with superpowers** — Give each colleague a role (e.g. researcher, writer) and attach MCP connections and skills. Hooman hands off when it makes sense.
@@ -35,83 +35,92 @@ You don’t manage a dozen bots. You have **one conversation** with Hooman. Want
 | **🤖 Hooman**       | The main agent. Reasons over memory, handles your messages and scheduled tasks, and delegates to colleagues when needed.                             |
 | **👥 Colleagues**   | Role-based sub-agents you define (id, description, responsibilities). Each can have specific MCP connections and skills. Hooman routes work to them. |
 | **🔌 Capabilities** | MCP servers (fetch, time, filesystem, or your own) and skills. You assign which colleagues get which capabilities.                                   |
-| **🧠 Memory**       | mem0 + Qdrant so Hooman (and colleagues) can use past context.                                                                                       |
+| **🧠 Memory**       | mem0: in-memory vector store + SQLite history (memory.db) so Hooman can use past context.                                                            |
 
 You chat with Hooman; Hooman uses memory, may call a colleague, and responds. Scheduled tasks run the same way—at a set time, Hooman processes the task like a message (reasoning, handoff, audit).
 
 ---
 
+## Prerequisites
+
+Install the following on your machine:
+
+- **Node.js** — [Latest LTS](https://nodejs.org/) (v20 or v22). Use [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm) if you need to switch versions.
+- **Yarn** — `corepack enable` then `corepack prepare yarn@stable --activate`, or install from [yarnpkg.com](https://yarnpkg.com/).
+- **uv + Python** — Required for default MCP servers (fetch, time, filesystem). Install [uv](https://docs.astral.sh/uv/) then Python:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  uv python install --default
+  ```
+  Ensure `uv` and `python` are on your `PATH`.
+
+No separate database server: the app uses Prisma + SQLite and mem0 (in-memory + SQLite history).
+
+---
+
 ## Quick start 🚀
 
-**Prerequisites:** Node.js ≥ 20, Yarn, Docker & Docker Compose (for MongoDB and Qdrant).
-
-Clone the repo, then run the **production** stack:
+Clone the repo, install dependencies, build, and run with PM2:
 
 ```bash
 git clone https://github.com/vaibhavpandeyvpz/hooman.git
 cd hooman
-docker compose --profile prod up
+yarn install
+yarn build
+npx pm2 start ecosystem.config.cjs
 ```
 
-✅ No `.env` needed—MongoDB and Qdrant URLs are set in Compose. Open **http://localhost:5173** (or **http://localhost:3000** for the API). Set your OpenAI API key and models in **Settings**, then chat with Hooman and add Colleagues in the UI.
+- **API** → http://localhost:3000
+- **Web UI** → http://localhost:5173
 
-To run only Qdrant and MongoDB (e.g. before running the API and web app locally), use `docker compose up` with no profile.
+Set your OpenAI API key and models in **Settings**, then chat with Hooman and add Colleagues in the UI.
+
+To stop: `npx pm2 stop ecosystem.config.cjs` (or `yarn stop`).
 
 ---
 
 ## Development 🛠️
 
-For active development with live reload:
-
-**🐳 Docker (API + web in containers, source mounted):**
-
-```bash
-docker compose --profile dev up
-```
-
-API on port 3000, Vite dev server on 5173. Source is mounted so changes reload.
-
-**💻 Local (API and web on your machine):**
-
-Create a `.env` from `.env.example` and set at least `MONGO_URI` (and `QDRANT_URL` if you use memory). Optionally set `VITE_PROXY_TARGET` and `MCP_STDIO_DEFAULT_CWD` for local API. Then:
+For active development with live reload, run API and web together:
 
 ```bash
 yarn install
 yarn dev:all   # API :3000, UI :5173
 ```
 
-Use `VITE_PROXY_TARGET=http://api-dev:3000` in `.env` if the web app runs locally but the API runs in Docker (e.g. only `api-dev` from compose).
+Create a `.env` from `.env.example` if you need to override defaults (e.g. `MCP_STDIO_DEFAULT_CWD`).
 
 ---
 
 ## Environment 📋
 
-When running the API and web **locally** (not via Docker), create a `.env` from `.env.example`. Key variables:
+When running locally, create a `.env` from `.env.example`. Key variables:
 
-| Variable                | Required | Description                                                                                                          |
-| ----------------------- | -------- | -------------------------------------------------------------------------------------------------------------------- |
-| `MONGO_URI`             | Yes      | MongoDB connection (e.g. `mongodb://localhost:27017` or `mongodb://mongodb:27017` in Docker).                        |
-| `QDRANT_URL`            | No\*     | Qdrant URL for vector memory (e.g. `http://localhost:6333`).                                                         |
-| `PORT`                  | No       | API port (default 3000).                                                                                             |
-| `VITE_PROXY_TARGET`     | No       | API URL for the web dev server proxy (default `http://localhost:3000`; in Docker dev use `http://api-dev:3000`).     |
-| `MCP_STDIO_DEFAULT_CWD` | No       | Working directory for stdio MCP / filesystem server (in Docker: `/app/mcp-cwd`; for local API use e.g. `./mcp-cwd`). |
+| Variable                | Required | Description                                                                                                             |
+| ----------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`          | No       | Prisma SQLite URL (default: `workspace/hooman.db` at project root).                                                     |
+| `PORT`                  | No       | API port (default 3000).                                                                                                |
+| `VITE_API_BASE`         | No       | Set when building for production so the web app can call the API (e.g. `http://localhost:3000`).                        |
+| `MCP_STDIO_DEFAULT_CWD` | No       | Working directory for stdio MCP / filesystem server (default: `workspace/mcpcwd`).                                      |
+| `SKILLS_CWD`            | No       | Override project root for skills (default: repo root). Skills are installed and listed from `<project>/.agents/skills`. |
 
-\*Needed for memory; app starts without it for config and UI.
-
-OpenAI API key, models, and web search are set in the **Settings** UI (persisted by the API), not via env.
+All runtime data is stored under **`workspace/`** at project root: `hooman.db` (Prisma), `config.json` (Settings), `memory.db` (mem0 history), `vector.db` (mem0 vector store – created on first chat after you set an API key), and `attachments/`. Stdio MCP servers use `workspace/mcpcwd` by default. OpenAI API key, models, and web search are set in the **Settings** UI (persisted by the API), not via env.
 
 ---
 
 ## Scripts 📜
 
-| Command            | Description                          |
-| ------------------ | ------------------------------------ |
-| `yarn dev`         | Start API (port 3000).               |
-| `yarn dev:web`     | Start UI (port 5173).                |
-| `yarn dev:all`     | Start API and UI together.           |
-| `yarn build`       | Build API and web app.               |
-| `yarn docker:up`   | Start infra only (Qdrant + MongoDB). |
-| `yarn docker:down` | Stop Docker Compose services.        |
+| Command        | Description                              |
+| -------------- | ---------------------------------------- |
+| `yarn dev`     | Start API (port 3000).                   |
+| `yarn dev:web` | Start UI dev server (port 5173).         |
+| `yarn dev:all` | Start API and UI together.               |
+| `yarn build`   | Build API and web app.                   |
+| `yarn start`   | Start API and web with PM2 (production). |
+| `yarn stop`    | Stop PM2 processes.                      |
+| `yarn restart` | Restart PM2 processes.                   |
+
+After code or config changes in production, run `yarn build` then `yarn restart`.
 
 ---
 

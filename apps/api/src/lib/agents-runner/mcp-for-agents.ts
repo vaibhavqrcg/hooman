@@ -17,6 +17,7 @@ import type {
   MCPConnectionStreamableHttp,
   MCPConnectionStdio,
 } from "../types/index.js";
+import { WORKSPACE_MCPCWD } from "../workspace.js";
 
 const HOOMAN_INSTRUCTIONS = `You are Hooman, a digital concierge that operates on behalf of the user.
 Be conversational and human-first. Use memory context when provided to tailor and remember preferences.
@@ -66,8 +67,8 @@ function getConnectionIdsFromAllowedCapabilities(
   return ids;
 }
 
-/** Default cwd for stdio MCP (set in Dockerfile; not configurable in Settings). */
-const DEFAULT_MCP_CWD = process.env.MCP_STDIO_DEFAULT_CWD ?? "/app/mcp-cwd";
+/** Default cwd for stdio MCP: workspace/mcpcwd, or MCP_STDIO_DEFAULT_CWD if set. */
+const DEFAULT_MCP_CWD = process.env.MCP_STDIO_DEFAULT_CWD ?? WORKSPACE_MCPCWD;
 
 function getDefaultMcpConnections(): MCPConnectionStdio[] {
   return [
@@ -99,8 +100,8 @@ function getDefaultMcpConnections(): MCPConnectionStdio[] {
 const defaultMcpConnections = getDefaultMcpConnections();
 const defaultMcpConnectionIds = defaultMcpConnections.map((c) => c.id);
 
-/** Default connection timeout for stdio MCP (ms). Longer than SDK default to allow cold starts in Docker (uvx/npx). */
-const STDIO_MCP_TIMEOUT_MS = 30_000;
+/** Default connection/loading timeout for stdio MCP (ms). 3600s to allow slow cold starts (uvx/npx, etc.). */
+const STDIO_MCP_TIMEOUT_MS = 3600 * 1000;
 
 /** Build one MCP server instance from a stdio connection config. */
 function buildStdioServer(c: MCPConnectionStdio): MCPServerStdio {

@@ -1,4 +1,5 @@
-const BASE = "";
+/** API base URL. Set VITE_API_BASE when building, or defaults to http://localhost:3000. */
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
 
 function apiError(res: Response, body: string): string {
   const msg =
@@ -203,6 +204,33 @@ export async function getHealth(): Promise<{
   return res.json();
 }
 
+export interface AppConfig {
+  OPENAI_API_KEY: string;
+  OPENAI_MODEL: string;
+  OPENAI_EMBEDDING_MODEL: string;
+  OPENAI_WEB_SEARCH: boolean;
+  MCP_USE_SERVER_MANAGER: boolean;
+  OPENAI_TRANSCRIPTION_MODEL: string;
+}
+
+export async function getConfig(): Promise<AppConfig> {
+  const res = await fetch(`${BASE}/api/config`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveConfig(
+  patch: Partial<AppConfig>,
+): Promise<AppConfig> {
+  const res = await fetch(`${BASE}/api/config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getSchedule(): Promise<{
   tasks: {
     id: string;
@@ -276,7 +304,7 @@ export async function deleteMCPConnection(id: string): Promise<void> {
   if (!res.ok) throw new Error(await res.text());
 }
 
-// Skills (list from ~/.agents; add/remove via npx skills CLI)
+// Skills (list from project .agents/skills; add/remove via npx skills CLI)
 export interface SkillsListResponse {
   output?: string;
   error?: string;
@@ -312,7 +340,6 @@ export async function getSkillContent(skillId: string): Promise<{
 
 export async function addSkillsPackage(options: {
   package: string;
-  global?: boolean;
   skills?: string[];
 }): Promise<SkillsListResponse> {
   const res = await fetch(`${BASE}/api/skills/add`, {
@@ -326,12 +353,11 @@ export async function addSkillsPackage(options: {
 
 export async function removeSkillsPackage(
   skills: string[],
-  global = false,
 ): Promise<SkillsListResponse> {
   const res = await fetch(`${BASE}/api/skills/remove`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ skills, global }),
+    body: JSON.stringify({ skills }),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

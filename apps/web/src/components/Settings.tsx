@@ -1,32 +1,10 @@
 import { useState, useEffect } from "react";
+import { getConfig, saveConfig, type AppConfig } from "../api";
 import { Checkbox } from "./Checkbox";
 import { Button } from "./Button";
 import { Input } from "./Input";
 
-export interface AppConfig {
-  OPENAI_API_KEY: string;
-  OPENAI_MODEL: string;
-  OPENAI_EMBEDDING_MODEL: string;
-  OPENAI_WEB_SEARCH: boolean;
-  MCP_USE_SERVER_MANAGER: boolean;
-  OPENAI_TRANSCRIPTION_MODEL: string;
-}
-
-async function getConfig(): Promise<AppConfig> {
-  const res = await fetch("/api/config");
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-async function saveConfig(patch: Partial<AppConfig>): Promise<AppConfig> {
-  const res = await fetch("/api/config", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export type { AppConfig };
 
 export function Settings() {
   const [form, setForm] = useState<AppConfig | null>(null);

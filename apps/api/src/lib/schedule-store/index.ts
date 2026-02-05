@@ -1,6 +1,4 @@
-import { MongoClient, Collection } from "mongodb";
-
-const COL = "schedules";
+import { getPrisma } from "../db.js";
 
 export interface ScheduledTaskDoc {
   id: string;
@@ -15,47 +13,48 @@ export interface ScheduleStore {
   remove(id: string): Promise<boolean>;
 }
 
-interface ScheduleDoc {
-  id: string;
-  execute_at: string;
-  intent: string;
-  context: Record<string, unknown>;
+function parseContext(s: string | null): Record<string, unknown> {
+  if (s == null || s === "") return {};
+  try {
+    const o = JSON.parse(s) as unknown;
+    return o && typeof o === "object" && !Array.isArray(o)
+      ? (o as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
-let client: MongoClient | null = null;
-let coll: Collection<ScheduleDoc> | null = null;
-
-export async function initScheduleStore(uri: string): Promise<ScheduleStore> {
-  client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("hooman");
-  coll = db.collection<ScheduleDoc>(COL);
-  await coll.createIndex({ id: 1 }, { unique: true });
-  await coll.createIndex({ execute_at: 1 });
+export async function initScheduleStore(): Promise<ScheduleStore> {
+  const prisma = getPrisma();
 
   return {
     async getAll(): Promise<ScheduledTaskDoc[]> {
-      const list = await coll!.find({}).toArray();
-      return list.map((doc) => ({
-        id: doc.id,
-        execute_at: doc.execute_at,
-        intent: doc.intent,
-        context: doc.context ?? {},
+      const rows = await prisma.schedule.findMany({
+        orderBy: { execute_at: "asc" },
+      });
+      return rows.map((r) => ({
+        id: r.id,
+        execute_at: r.execute_at,
+        intent: r.intent,
+        context: parseContext(r.context),
       }));
     },
 
     async add(task: ScheduledTaskDoc): Promise<void> {
-      await coll!.insertOne({
-        id: task.id,
-        execute_at: task.execute_at,
-        intent: task.intent,
-        context: task.context ?? {},
+      await prisma.schedule.create({
+        data: {
+          id: task.id,
+          execute_at: task.execute_at,
+          intent: task.intent,
+          context: JSON.stringify(task.context ?? {}),
+        },
       });
     },
 
     async remove(id: string): Promise<boolean> {
-      const result = await coll!.deleteOne({ id });
-      return (result.deletedCount ?? 0) > 0;
+      const result = await prisma.schedule.deleteMany({ where: { id } });
+      return (result.count ?? 0) > 0;
     },
   };
 }

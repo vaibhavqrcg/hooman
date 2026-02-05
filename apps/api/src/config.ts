@@ -1,13 +1,10 @@
 import createDebug from "debug";
 import { readFile, writeFile } from "fs/promises";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { getWorkspaceConfigPath, WORKSPACE_ROOT } from "./lib/workspace.js";
 
 const debug = createDebug("hooman:config");
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-/** API package root (apps/api when built). Data lives in <root>/data. */
-const API_ROOT = join(__dirname, "..");
+const CONFIG_PATH = getWorkspaceConfigPath();
 
 /** Settings UI / persisted config (API key, embedding model, LLM model, web search, MCP, transcription). */
 export interface PersistedConfig {
@@ -19,9 +16,8 @@ export interface PersistedConfig {
   OPENAI_TRANSCRIPTION_MODEL: string;
 }
 
-/** Full config: persisted + QDRANT_URL and PORT from .env only. */
+/** Full config: persisted + PORT from .env only. */
 export interface AppConfig extends PersistedConfig {
-  QDRANT_URL: string;
   PORT: number;
 }
 
@@ -40,12 +36,9 @@ const ENV_DEFAULTS = {
 
 let store: PersistedConfig = { ...DEFAULTS };
 
-const CONFIG_PATH = join(API_ROOT, "data", "config.json");
-
 export function getConfig(): AppConfig {
-  const qdrantUrl = (process.env.QDRANT_URL ?? "").trim();
   const port = Number(process.env.PORT) || ENV_DEFAULTS.PORT;
-  return { ...store, QDRANT_URL: qdrantUrl, PORT: port };
+  return { ...store, PORT: port };
 }
 
 export function updateConfig(patch: Partial<PersistedConfig>): PersistedConfig {
@@ -73,7 +66,7 @@ export function updateConfig(patch: Partial<PersistedConfig>): PersistedConfig {
 async function persist(): Promise<void> {
   try {
     const { mkdir } = await import("fs/promises");
-    await mkdir(join(API_ROOT, "data"), { recursive: true });
+    await mkdir(WORKSPACE_ROOT, { recursive: true });
     await writeFile(CONFIG_PATH, JSON.stringify(store, null, 2), "utf-8");
   } catch {
     // ignore

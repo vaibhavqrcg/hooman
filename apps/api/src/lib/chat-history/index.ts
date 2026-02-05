@@ -1,17 +1,7 @@
-import { MongoClient, Collection, ObjectId } from "mongodb";
+import { getPrisma } from "../db.js";
 
-const COL = "chat_messages";
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 200;
-
-export interface ChatMessageDoc {
-  _id?: ObjectId;
-  userId: string;
-  role: "user" | "assistant";
-  text: string;
-  attachment_ids?: string[];
-  createdAt: Date;
-}
 
 export interface GetMessagesResult {
   messages: Array<{
@@ -35,7 +25,6 @@ export interface ChatHistoryStore {
     userId: string,
     options?: { page?: number; pageSize?: number },
   ): Promise<GetMessagesResult>;
-  /** Last N messages in chronological order (oldest first) for agent context. */
   getRecentMessages(
     userId: string,
     limit: number,
@@ -49,15 +38,18 @@ export interface ChatHistoryStore {
   clearAll(userId: string): Promise<void>;
 }
 
-let client: MongoClient | null = null;
-let coll: Collection<ChatMessageDoc> | null = null;
+function parseAttachmentIds(raw: string | null): string[] | undefined {
+  if (raw == null || raw === "") return undefined;
+  try {
+    const arr = JSON.parse(raw) as unknown;
+    return Array.isArray(arr) ? arr.map(String) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-export async function initChatHistory(uri: string): Promise<ChatHistoryStore> {
-  client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("hooman");
-  coll = db.collection<ChatMessageDoc>(COL);
-  await coll.createIndex({ userId: 1, createdAt: 1 });
+export async function initChatHistory(): Promise<ChatHistoryStore> {
+  const prisma = getPrisma();
 
   return {
     async addMessage(
@@ -66,14 +58,20 @@ export async function initChatHistory(uri: string): Promise<ChatHistoryStore> {
       text: string,
       attachment_ids?: string[],
     ) {
-      await coll!.insertOne({
-        userId,
-        role,
-        text,
-        ...(attachment_ids?.length ? { attachment_ids } : {}),
-        createdAt: new Date(),
+      await prisma.chatMessage.create({
+        data: {
+          userId,
+          role,
+          text,
+          ...(attachment_ids?.length
+            ? {
+                attachment_ids: JSON.stringify(attachment_ids),
+              }
+            : {}),
+        },
       });
     },
+
     async getMessages(
       userId: string,
       options?: { page?: number; pageSize?: number },
@@ -84,38 +82,45 @@ export async function initChatHistory(uri: string): Promise<ChatHistoryStore> {
         Math.max(1, options?.pageSize ?? DEFAULT_PAGE_SIZE),
       );
       const skip = (page - 1) * pageSize;
-      const [messages, total] = await Promise.all([
-        coll!
-          .find({ userId })
-          .sort({ createdAt: 1 })
-          .skip(skip)
-          .limit(pageSize)
-          .project<{
-            role: "user" | "assistant";
-            text: string;
-            attachment_ids?: string[];
-          }>({ role: 1, text: 1, attachment_ids: 1, _id: 0 })
-          .toArray(),
-        coll!.countDocuments({ userId }),
+
+      const [rows, total] = await Promise.all([
+        prisma.chatMessage.findMany({
+          where: { userId },
+          orderBy: { createdAt: "asc" },
+          skip,
+          take: pageSize,
+          select: { role: true, text: true, attachment_ids: true },
+        }),
+        prisma.chatMessage.count({ where: { userId } }),
       ]);
+
+      const messages = rows.map((r) => ({
+        role: r.role as "user" | "assistant",
+        text: r.text,
+        attachment_ids: parseAttachmentIds(r.attachment_ids),
+      }));
+
       return { messages, total, page, pageSize };
     },
+
     async getRecentMessages(userId: string, limit: number) {
       const n = Math.min(100, Math.max(1, limit));
-      const messages = await coll!
-        .find({ userId })
-        .sort({ createdAt: -1 })
-        .limit(n)
-        .project<{
-          role: "user" | "assistant";
-          text: string;
-          attachment_ids?: string[];
-        }>({ role: 1, text: 1, attachment_ids: 1, _id: 0 })
-        .toArray();
-      return messages.reverse();
+      const rows = await prisma.chatMessage.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: n,
+        select: { role: true, text: true, attachment_ids: true },
+      });
+
+      return rows.reverse().map((r) => ({
+        role: r.role as "user" | "assistant",
+        text: r.text,
+        attachment_ids: parseAttachmentIds(r.attachment_ids),
+      }));
     },
+
     async clearAll(userId: string) {
-      await coll!.deleteMany({ userId });
+      await prisma.chatMessage.deleteMany({ where: { userId } });
     },
   };
 }

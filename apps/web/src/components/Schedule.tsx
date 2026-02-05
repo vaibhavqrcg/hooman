@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, X } from "lucide-react";
+import { getSchedule, createScheduledTask, cancelScheduledTask } from "../api";
 import { useDialog } from "./Dialog";
 import { Button } from "./Button";
 import { Input } from "./Input";
@@ -11,32 +12,6 @@ interface Task {
   execute_at: string;
   intent: string;
   context: Record<string, unknown>;
-}
-
-async function getSchedule(): Promise<Task[]> {
-  const res = await fetch("/api/schedule");
-  if (!res.ok) return [];
-  const data = await res.json();
-  return data.tasks ?? [];
-}
-
-async function createTask(
-  execute_at: string,
-  intent: string,
-  context: Record<string, unknown>,
-): Promise<Task> {
-  const res = await fetch("/api/schedule", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ execute_at, intent, context }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
-
-async function cancelTask(id: string): Promise<void> {
-  const res = await fetch(`/api/schedule/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error(await res.text());
 }
 
 export function Schedule() {
@@ -51,7 +26,7 @@ export function Schedule() {
   function load() {
     setLoading(true);
     getSchedule()
-      .then(setTasks)
+      .then((data) => setTasks(data.tasks ?? []))
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }
@@ -77,7 +52,7 @@ export function Schedule() {
     }
     setError(null);
     try {
-      await createTask(executeAt, intent, {});
+      await createScheduledTask(executeAt, intent, {});
       setExecuteAt("");
       setIntent("");
       setAddOpen(false);
@@ -96,7 +71,7 @@ export function Schedule() {
     });
     if (!ok) return;
     try {
-      await cancelTask(task.id);
+      await cancelScheduledTask(task.id);
       load();
     } catch (e) {
       setError((e as Error).message);

@@ -62,7 +62,7 @@ export function Capabilities() {
   >([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Skills tab state (global ~/.agents only; list from filesystem + SKILL.md frontmatter)
+  // Skills tab state (project .agents/skills; list from filesystem + SKILL.md frontmatter)
   const [skillsList, setSkillsList] = useState<SkillEntry[]>([]);
   const [skillsLoading, setSkillsLoading] = useState(false);
   const [skillsAddOpen, setSkillsAddOpen] = useState(false);
@@ -596,7 +596,6 @@ export function Capabilities() {
                         .filter(Boolean);
                       await addSkillsPackage({
                         package: addPackage.trim(),
-                        global: true,
                         skills: skills.length > 0 ? skills : undefined,
                       });
                       setSkillsAddOpen(false);
@@ -788,7 +787,7 @@ export function Capabilities() {
                             if (!ok) return;
                             setSkillsError(null);
                             try {
-                              await removeSkillsPackage([skill.id], true);
+                              await removeSkillsPackage([skill.id]);
                               loadSkills();
                             } catch (e) {
                               setSkillsError((e as Error).message);

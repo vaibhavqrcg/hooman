@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  userId         String
+  role           String
+  text           String
+  attachment_ids String?  // JSON array
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model ChatAttachment {
+  id           String   @id @default(cuid())
+  userId       String
+  originalName String
+  storedName   String
+  mimeType     String
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model Colleague {
+  id                  String @id
+  description         String @default("")
+  responsibilities    String @default("")
+  allowed_connections String @default("[]")
+  allowed_skills      String @default("[]")
+  memory              String @default("{\"scope\":\"role\"}")
+  reporting           String @default("{\"on\":[\"task_complete\",\"uncertainty\"]}")
+}
+
+model Schedule {
+  id         String @id
+  execute_at String
+  intent     String
+  context    String @default("{}")
+}
+
+model MCPConnection {
+  id      String @id
+  type    String
+  payload String
+}

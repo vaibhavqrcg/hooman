@@ -1,7 +1,11 @@
 import fs from "node:fs";
-import path from "node:path";
 import type { MemoryType } from "../types/index.js";
-import { QdrantClient } from "@qdrant/js-client-rest";
+
+import {
+  getWorkspaceMemoryDbPath,
+  getWorkspaceVectorDbPath,
+  WORKSPACE_ROOT,
+} from "../workspace.js";
 
 export interface MemorySearchResult {
   id: string;
@@ -14,8 +18,6 @@ export interface MemorySearchResult {
 export interface MemoryServiceConfig {
   /** OpenAI API key (required for Mem0 embeddings). */
   openaiApiKey: string;
-  /** Qdrant URL (required). Mem0 uses Qdrant as the vector store. */
-  qdrantUrl: string;
   /** Embedding model for Mem0 (e.g. text-embedding-3-small). Default: text-embedding-3-small. */
   embeddingModel?: string;
   /** LLM model for Mem0 (e.g. gpt-5.2). Default: gpt-5.2. */
@@ -155,7 +157,7 @@ class Mem0Adapter implements IMemoryService {
   }
 }
 
-/** No-op memory when API key or Qdrant is missing; allows API and Settings to start. */
+/** No-op memory when API key is missing; allows API and Settings to start. */
 class StubMemoryService implements IMemoryService {
   async add(): Promise<void> {}
   async search(): Promise<MemorySearchResult[]> {
@@ -168,49 +170,19 @@ class StubMemoryService implements IMemoryService {
   async deleteAll(): Promise<void> {}
 }
 
-const MEMORY_MIGRATIONS_COLLECTION = "memory_migrations";
-
 /**
- * Ensure the `memory_migrations` collection exists in Qdrant so mem0ai's initialize() does not
- * call createCollection and hit "Collection already exists" (400). mem0ai only catches 409.
- */
-async function ensureQdrantMigrationsCollection(url: string): Promise<void> {
-  const client = new QdrantClient({ url });
-  const { collections } = await client.getCollections();
-  const exists = collections.some(
-    (c: { name: string }) => c.name === MEMORY_MIGRATIONS_COLLECTION,
-  );
-  if (exists) return;
-  try {
-    await client.createCollection(MEMORY_MIGRATIONS_COLLECTION, {
-      vectors: { size: 1, distance: "Cosine" },
-    });
-  } catch (err: unknown) {
-    const status = (err as { status?: number })?.status;
-    const msg =
-      String(
-        (err as { data?: { status?: { error?: string } }; message?: string })
-          ?.data?.status?.error ?? "",
-      ) + String((err as { message?: string })?.message ?? "");
-    if (status === 400 && msg.includes("already exists")) return;
-    throw err;
-  }
-}
-
-/**
- * Create a Mem0-backed memory service using Qdrant as the vector store.
- * If openaiApiKey or qdrantUrl is missing, returns a no-op stub so the API (and Settings page) can start.
+ * Create a Mem0-backed memory service.
+ * - Vector store: SQLite at workspace/vector.db.
+ * - History store: SQLite at workspace/memory.db.
+ * If openaiApiKey is missing, returns a no-op stub so the API (and Settings page) can start.
  */
 export async function createMemoryService(
   config: MemoryServiceConfig,
 ): Promise<IMemoryService> {
   const apiKey = (config.openaiApiKey ?? "").trim();
-  const qdrantUrl = (config.qdrantUrl ?? "").trim();
-  if (!apiKey || !qdrantUrl) {
+  if (!apiKey) {
     return new StubMemoryService();
   }
-
-  await ensureQdrantMigrationsCollection(qdrantUrl);
 
   const mod = await import("mem0ai/oss");
   const Memory = (
@@ -226,9 +198,8 @@ export async function createMemoryService(
     (config.llmModel ?? DEFAULT_LLM_MODEL).trim() || DEFAULT_LLM_MODEL;
   const embeddingDims = embeddingDimsForModel(embeddingModel);
 
-  const dataDir = path.join(process.cwd(), "data");
-  const memoryDbPath = path.join(dataDir, "memory.db");
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(WORKSPACE_ROOT, { recursive: true });
+  const memoryDbPath = getWorkspaceMemoryDbPath();
 
   const memory = new Memory({
     version: "v1.1",
@@ -237,11 +208,11 @@ export async function createMemoryService(
       config: { apiKey, model: embeddingModel },
     },
     vectorStore: {
-      provider: "qdrant",
+      provider: "memory",
       config: {
-        url: qdrantUrl,
         collectionName: "hooman_memories",
-        embeddingModelDims: embeddingDims,
+        dimension: embeddingDims,
+        dbPath: getWorkspaceVectorDbPath(),
       },
     },
     llm: {

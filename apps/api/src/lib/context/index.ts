@@ -4,7 +4,7 @@ import type { GetMessagesResult } from "../chat-history/index.js";
 import type { MemorySearchResult } from "../memory/index.js";
 
 export interface ContextStore {
-  /** Persist one user/assistant turn to both memory (Mem0) and chat history (MongoDB). */
+  /** Persist one user/assistant turn to both memory (Mem0) and chat history (SQLite). */
   addTurn(
     userId: string,
     userText: string,

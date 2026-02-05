@@ -1,20 +1,19 @@
 import { spawn } from "child_process";
 import { readdir, readFile } from "fs/promises";
-import { homedir } from "os";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import matter from "gray-matter";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-/** Repo root (apps/api/src/lib/skills-cli -> 5 levels up). Skills CLI runs from here so .agents is at project root. */
+/** Repo/project root (apps/api/src/lib/skills-cli -> 5 levels up). Skills live at project root under .agents/skills. */
 const PROJECT_ROOT = join(__dirname, "..", "..", "..", "..", "..");
 
 /** Default agent for skills (user requested "amp"). */
 const SKILLS_AGENT = "amp";
 
-/** Global skills dir: CLI installs to ~/.agents/skills/<skill-name> */
-const GLOBAL_SKILLS_DIR = join(homedir(), ".agents", "skills");
+/** Project-local skills dir: list and read from <project>/.agents/skills/<skill-name>. */
+const PROJECT_SKILLS_DIR = join(PROJECT_ROOT, ".agents", "skills");
 
 export interface SkillEntry {
   id: string;
@@ -54,12 +53,11 @@ function parseSkillFrontmatter(
 }
 
 /**
- * List installed skills by reading ~/.agents/skills and parsing each skill's SKILL.md frontmatter (name, description).
- * Matches where the skills CLI installs (e.g. ~/.agents/skills/pptx).
+ * List installed skills by reading the project .agents/skills dir and parsing each skill's SKILL.md frontmatter (name, description).
  */
 export async function listSkillsFromFs(): Promise<SkillEntry[]> {
   try {
-    const entries = await readdir(GLOBAL_SKILLS_DIR, { withFileTypes: true });
+    const entries = await readdir(PROJECT_SKILLS_DIR, { withFileTypes: true });
     const dirs = entries
       .filter((e) => e.isDirectory() && !e.name.startsWith("."))
       .map((e) => e.name)
@@ -67,7 +65,7 @@ export async function listSkillsFromFs(): Promise<SkillEntry[]> {
 
     const results: SkillEntry[] = [];
     for (const id of dirs) {
-      const skillPath = join(GLOBAL_SKILLS_DIR, id, SKILL_MD);
+      const skillPath = join(PROJECT_SKILLS_DIR, id, SKILL_MD);
       try {
         const raw = await readFile(skillPath, "utf-8");
         const { name, description } = parseSkillFrontmatter(raw, id);
@@ -96,7 +94,7 @@ function isSafeSkillId(id: string): boolean {
 export async function getSkillContent(skillId: string): Promise<string | null> {
   if (!isSafeSkillId(skillId)) return null;
   try {
-    const path = join(GLOBAL_SKILLS_DIR, skillId, SKILL_MD);
+    const path = join(PROJECT_SKILLS_DIR, skillId, SKILL_MD);
     const raw = await readFile(path, "utf-8");
     const { content } = matter(raw);
     return typeof content === "string" ? content.trim() : "";
@@ -108,8 +106,7 @@ export async function getSkillContent(skillId: string): Promise<string | null> {
 }
 
 /**
- * Run npx skills with args. Uses project root as cwd (or SKILLS_CWD env).
- * Does not persist to DB; CLI manages .agents / ~/.agents.
+ * Run npx skills with args. Uses project root as cwd and AGENTS_HOME so installs go to project .agents/skills.
  */
 export async function runSkills(
   args: string[],
@@ -120,12 +117,14 @@ export async function runSkills(
       process.env.SKILLS_CWD.trim()) ||
     options?.cwd ||
     PROJECT_ROOT;
+  const agentsHome = join(cwd, ".agents");
 
   return new Promise((resolve) => {
     const proc = spawn("npx", ["skills", ...args], {
       cwd,
       shell: true,
       stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, AGENTS_HOME: agentsHome },
     });
 
     let stdout = "";
@@ -146,14 +145,12 @@ export async function runSkills(
   });
 }
 
-/** Add a skill package. global => --global, skills => --skill x --skill y, -y non-interactive */
+/** Add a skill package to project .agents/skills. skills => --skill x --skill y, -y non-interactive */
 export async function addSkill(options: {
   package: string;
-  global?: boolean;
   skills?: string[];
 }): Promise<SkillsRunResult> {
   const args = ["add", options.package.trim(), "-a", SKILLS_AGENT, "--yes"];
-  if (options.global) args.push("--global");
   for (const s of options.skills ?? []) {
     const t = String(s).trim();
     if (t) args.push("--skill", t);
@@ -161,16 +158,18 @@ export async function addSkill(options: {
   return runSkills(args);
 }
 
-/** Remove installed skills by name. */
+/** Remove installed skills by name from project .agents/skills. */
 export async function removeSkills(
   skillNames: string[],
-  global = false,
 ): Promise<SkillsRunResult> {
   if (skillNames.length === 0) {
     return { stdout: "", stderr: "No skills specified.", code: 1 };
   }
-  const args = ["remove", ...skillNames.map((s) => s.trim()).filter(Boolean)];
-  if (global) args.push("--global");
-  args.push("-a", SKILLS_AGENT);
+  const args = [
+    "remove",
+    ...skillNames.map((s) => s.trim()).filter(Boolean),
+    "-a",
+    SKILLS_AGENT,
+  ];
   return runSkills(args);
 }

@@ -2,8 +2,6 @@ import "dotenv/config";
 import createDebug from "debug";
 import express from "express";
 import cors from "cors";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
 
 const debug = createDebug("hooman:api");
 import {
@@ -21,6 +19,7 @@ import type { RawDispatchInput } from "./lib/types/index.js";
 import type { ResponsePayload } from "./lib/audit/index.js";
 import { getConfig, loadPersisted } from "./config.js";
 import { registerRoutes } from "./routes.js";
+import { initDb } from "./lib/db.js";
 import { initChatHistory } from "./lib/chat-history/index.js";
 import { initAttachmentStore } from "./lib/attachment-store/index.js";
 import { createContext } from "./lib/context/index.js";
@@ -30,8 +29,17 @@ import { initMCPConnectionsStore } from "./lib/mcp-connections/store.js";
 import { runChat } from "./lib/agents-runner/index.js";
 import { createHoomanAgentWithMcp } from "./lib/agents-runner/mcp-for-agents.js";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ATTACHMENTS_DATA_DIR = join(__dirname, "data", "attachments");
+import {
+  getWorkspaceAttachmentsDir,
+  WORKSPACE_ROOT,
+  WORKSPACE_MCPCWD,
+} from "./lib/workspace.js";
+import { mkdirSync } from "fs";
+
+const ATTACHMENTS_DATA_DIR = getWorkspaceAttachmentsDir();
+// Ensure workspace dirs exist (config, db, memory, attachments, MCP cwd)
+mkdirSync(WORKSPACE_ROOT, { recursive: true });
+mkdirSync(WORKSPACE_MCPCWD, { recursive: true });
 
 const CHAT_THREAD_LIMIT = 30;
 
@@ -45,38 +53,23 @@ const eventRouter = new EventRouter();
 const config = getConfig();
 const memory = await createMemoryService({
   openaiApiKey: config.OPENAI_API_KEY,
-  qdrantUrl: config.QDRANT_URL,
   embeddingModel: config.OPENAI_EMBEDDING_MODEL,
   llmModel: config.OPENAI_MODEL,
 });
 
-const mongoUri = process.env.MONGO_URI?.trim();
-if (!mongoUri) {
-  throw new Error("MONGO_URI is required. Set it in .env.");
-}
+await initDb();
+debug("Database (Prisma + SQLite) ready");
 
-const chatHistory = await initChatHistory(mongoUri);
-debug("Chat history using MongoDB");
-
-const attachmentStore = await initAttachmentStore(
-  mongoUri,
-  ATTACHMENTS_DATA_DIR,
-);
-debug("Attachment store using MongoDB and %s", ATTACHMENTS_DATA_DIR);
-
+const chatHistory = await initChatHistory();
+const attachmentStore = await initAttachmentStore(ATTACHMENTS_DATA_DIR);
 const context = createContext(memory, chatHistory);
 
-const colleagueStore = await initColleagueStore(mongoUri);
-debug("Colleagues using MongoDB");
-
+const colleagueStore = await initColleagueStore();
 const colleagueEngine = new ColleagueEngine(colleagueStore);
 await colleagueEngine.load();
 
-const scheduleStore = await initScheduleStore(mongoUri);
-debug("Schedules using MongoDB");
-
-const mcpConnectionsStore = await initMCPConnectionsStore(mongoUri);
-debug("MCP connections using MongoDB");
+const scheduleStore = await initScheduleStore();
+const mcpConnectionsStore = await initMCPConnectionsStore();
 
 eventRouter.register(async (event) => {
   if (

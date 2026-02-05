@@ -5,8 +5,6 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const apiTarget = process.env.VITE_PROXY_TARGET ?? "http://localhost:3000";
-
 export default defineConfig({
   root: __dirname,
   plugins: [react()],
@@ -17,10 +15,6 @@ export default defineConfig({
     watch: {
       usePolling: true,
       interval: 1000,
-    },
-    proxy: {
-      "/api": { target: apiTarget, changeOrigin: true },
-      "/health": { target: apiTarget, changeOrigin: true },
     },
   },
 });

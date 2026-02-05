@@ -1,4 +1,4 @@
-import { MongoClient, Collection } from "mongodb";
+import { getPrisma } from "../db.js";
 import type {
   MCPConnection,
   MCPConnectionHosted,
@@ -6,10 +6,7 @@ import type {
   MCPConnectionStdio,
 } from "../types/index.js";
 
-const COL = "mcp_connections";
 const CONNECTION_TYPES = ["hosted", "streamable_http", "stdio"] as const;
-
-type MCPConnectionDoc = MCPConnection & { id: string };
 
 export interface MCPConnectionsStore {
   getAll(): Promise<MCPConnection[]>;
@@ -18,83 +15,123 @@ export interface MCPConnectionsStore {
   remove(id: string): Promise<boolean>;
 }
 
-function toConnection(doc: MCPConnectionDoc): MCPConnection {
-  if (doc.type === "hosted") {
-    const d = doc as MCPConnectionHosted & { id: string };
+function payloadToConnection(
+  id: string,
+  type: string,
+  payload: unknown,
+): MCPConnection | null {
+  const p =
+    payload && typeof payload === "object"
+      ? (payload as Record<string, unknown>)
+      : null;
+  if (!p) return null;
+
+  if (type === "hosted") {
+    const d = p as Record<string, unknown>;
     return {
-      id: d.id,
+      id,
       type: "hosted",
-      server_label: d.server_label,
-      server_url: d.server_url ?? "",
-      require_approval: d.require_approval ?? "never",
-      streaming: d.streaming,
-      created_at: d.created_at,
-    };
+      server_label: String(d.server_label ?? ""),
+      server_url: String(d.server_url ?? ""),
+      require_approval: (d.require_approval as "always" | "never") ?? "never",
+      streaming: d.streaming as boolean | undefined,
+      created_at: d.created_at as string | undefined,
+    } as MCPConnectionHosted;
   }
-  if (doc.type === "streamable_http") {
-    const d = doc as MCPConnectionStreamableHttp & { id: string };
+  if (type === "streamable_http") {
+    const d = p as Record<string, unknown>;
     return {
-      id: d.id,
+      id,
       type: "streamable_http",
-      name: d.name,
-      url: d.url,
-      headers: d.headers,
-      timeout_seconds: d.timeout_seconds,
-      cache_tools_list: d.cache_tools_list,
-      max_retry_attempts: d.max_retry_attempts,
-      created_at: d.created_at,
-    };
+      name: String(d.name ?? ""),
+      url: String(d.url ?? ""),
+      headers: d.headers as Record<string, string> | undefined,
+      timeout_seconds: d.timeout_seconds as number | undefined,
+      cache_tools_list: d.cache_tools_list as boolean | undefined,
+      max_retry_attempts: d.max_retry_attempts as number | undefined,
+      created_at: d.created_at as string | undefined,
+    } as MCPConnectionStreamableHttp;
   }
-  const d = doc as MCPConnectionStdio & { id: string };
-  return {
-    id: d.id,
-    type: "stdio",
-    name: d.name,
-    command: d.command,
-    args: Array.isArray(d.args) ? d.args : [],
-    env: d.env && typeof d.env === "object" ? d.env : undefined,
-    cwd: typeof d.cwd === "string" ? d.cwd : undefined,
-    created_at: d.created_at,
-  };
+  if (type === "stdio") {
+    const d = p as Record<string, unknown>;
+    return {
+      id,
+      type: "stdio",
+      name: String(d.name ?? ""),
+      command: String(d.command ?? ""),
+      args: Array.isArray(d.args) ? d.args.map(String) : [],
+      env:
+        d.env && typeof d.env === "object"
+          ? (d.env as Record<string, string>)
+          : undefined,
+      cwd: typeof d.cwd === "string" ? d.cwd : undefined,
+      created_at: d.created_at as string | undefined,
+    } as MCPConnectionStdio;
+  }
+  return null;
 }
 
-let client: MongoClient | null = null;
-let coll: Collection<MCPConnectionDoc> | null = null;
-
-export async function initMCPConnectionsStore(
-  uri: string,
-): Promise<MCPConnectionsStore> {
-  client = new MongoClient(uri);
-  await client.connect();
-  const db = client.db("hooman");
-  coll = db.collection<MCPConnectionDoc>(COL);
-  await coll.createIndex({ id: 1 }, { unique: true });
+export async function initMCPConnectionsStore(): Promise<MCPConnectionsStore> {
+  const prisma = getPrisma();
 
   return {
     async getAll(): Promise<MCPConnection[]> {
-      const list = (await coll!
-        .find({ type: { $in: CONNECTION_TYPES } })
-        .toArray()) as MCPConnectionDoc[];
-      return list.map(toConnection);
+      const rows = await prisma.mCPConnection.findMany({
+        where: { type: { in: [...CONNECTION_TYPES] } },
+        orderBy: { id: "asc" },
+      });
+      const out: MCPConnection[] = [];
+      for (const r of rows) {
+        let payload: unknown;
+        try {
+          payload =
+            typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload;
+        } catch {
+          continue;
+        }
+        const conn = payloadToConnection(r.id, r.type, payload);
+        if (conn) out.push(conn);
+      }
+      return out;
     },
 
     async getById(id: string): Promise<MCPConnection | null> {
-      const doc = (await coll!.findOne({ id })) as MCPConnectionDoc | null;
-      if (!doc) return null;
-      return toConnection(doc);
+      const row = await prisma.mCPConnection.findUnique({ where: { id } });
+      if (!row) return null;
+      let payload: unknown;
+      try {
+        payload =
+          typeof row.payload === "string"
+            ? JSON.parse(row.payload)
+            : row.payload;
+      } catch {
+        return null;
+      }
+      return payloadToConnection(row.id, row.type, payload);
     },
 
     async addOrUpdate(conn: MCPConnection): Promise<void> {
-      const doc = {
+      const payload = {
         ...conn,
         created_at: conn.created_at ?? new Date().toISOString(),
       };
-      await coll!.updateOne({ id: conn.id }, { $set: doc }, { upsert: true });
+      await prisma.mCPConnection.upsert({
+        where: { id: conn.id },
+        create: {
+          id: conn.id,
+          type: conn.type,
+          payload: JSON.stringify(payload),
+        },
+        update: {
+          type: conn.type,
+          payload: JSON.stringify(payload),
+        },
+      });
     },
 
     async remove(id: string): Promise<boolean> {
-      const result = await coll!.deleteOne({ id });
-      return (result.deletedCount ?? 0) > 0;
+      const result = await prisma.mCPConnection.deleteMany({ where: { id } });
+      return (result.count ?? 0) > 0;
     },
   };
 }
