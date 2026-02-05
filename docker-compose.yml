@@ -2,6 +2,8 @@
 services:
   qdrant:
     image: qdrant/qdrant:v1.7.4
+    ports:
+      - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -9,6 +11,8 @@ services:
 
   mongodb:
     image: mongo:7
+    ports:
+      - "27017:27017"
     volumes:
       - mongodb_data:/data/db
 
@@ -31,6 +35,8 @@ services:
     volumes:
       - ./apps/api:/app/apps/api
       - api_data:/app/apps/api/data
+      - mcp_cwd:/app/mcp-cwd
+      - skills_data:/root/.agents/skills
     depends_on:
       qdrant:
         condition: service_started
@@ -72,6 +78,8 @@ services:
       QDRANT_URL: http://qdrant:6333
     volumes:
       - api_data:/app/apps/api/data
+      - mcp_cwd:/app/mcp-cwd
+      - skills_data:/root/.agents/skills
     depends_on:
       qdrant:
         condition: service_started
@@ -94,3 +102,5 @@ volumes:
   qdrant_data: {}
   mongodb_data: {}
   api_data: {}
+  mcp_cwd: {}
+  skills_data: {}

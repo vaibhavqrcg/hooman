@@ -66,16 +66,43 @@ function getConnectionIdsFromAllowedCapabilities(
   return ids;
 }
 
-/** Default working directory for stdio MCP when cwd not set (e.g. /app/mcp-cwd in Docker). */
-const DEFAULT_STDIO_CWD =
-  (typeof process.env.MCP_STDIO_DEFAULT_CWD === "string" &&
-    process.env.MCP_STDIO_DEFAULT_CWD.trim()) ||
-  undefined;
+/** Default cwd for stdio MCP (set in Dockerfile; not configurable in Settings). */
+const DEFAULT_MCP_CWD = process.env.MCP_STDIO_DEFAULT_CWD ?? "/app/mcp-cwd";
+
+function getDefaultMcpConnections(): MCPConnectionStdio[] {
+  return [
+    {
+      id: "_default_fetch",
+      type: "stdio",
+      name: "fetch",
+      command: "uvx",
+      args: ["mcp-server-fetch"],
+    },
+    {
+      id: "_default_time",
+      type: "stdio",
+      name: "time",
+      command: "uvx",
+      args: ["mcp-server-time"],
+    },
+    {
+      id: "_default_filesystem",
+      type: "stdio",
+      name: "filesystem",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", DEFAULT_MCP_CWD],
+    },
+  ];
+}
+
+/** First-party default MCP servers (stdio): fetch, time, filesystem. Single source of truth. */
+const defaultMcpConnections = getDefaultMcpConnections();
+const defaultMcpConnectionIds = defaultMcpConnections.map((c) => c.id);
 
 /** Build one MCP server instance from a stdio connection config. */
 function buildStdioServer(c: MCPConnectionStdio): MCPServerStdio {
   const hasArgs = Array.isArray(c.args) && c.args.length > 0;
-  const cwd = c.cwd?.trim() || DEFAULT_STDIO_CWD;
+  const cwd = c.cwd?.trim() || DEFAULT_MCP_CWD;
   return new MCPServerStdio({
     name: c.name || c.id,
     ...(hasArgs
@@ -194,12 +221,17 @@ export async function createHoomanAgentWithMcp(
 }> {
   if (options?.apiKey) setDefaultOpenAIKey(options.apiKey);
 
+  const allConnections: MCPConnection[] = [
+    ...defaultMcpConnections,
+    ...connections,
+  ];
+
   const [
     allSkills,
     { servers, connectionIdToServer, connectionIdToHostedTool },
   ] = await Promise.all([
     listSkillsFromFs(),
-    Promise.resolve(buildMcpFromConnections(connections)),
+    Promise.resolve(buildMcpFromConnections(allConnections)),
   ]);
 
   const skillsById = new Map<string, SkillEntry>(
@@ -219,6 +251,13 @@ export async function createHoomanAgentWithMcp(
     );
     const colleagueServers: MCPServer[] = [];
     const colleagueTools: ReturnType<typeof hostedMcpTool>[] = [];
+    // Every colleague gets the default first-party MCP servers (fetch, time, filesystem).
+    for (const id of defaultMcpConnectionIds) {
+      const server = connectionIdToServer.get(id);
+      if (server && activeServers.includes(server))
+        colleagueServers.push(server);
+    }
+    // Plus any user-configured connections assigned to this colleague.
     for (const id of connectionIds) {
       const server = connectionIdToServer.get(id);
       if (server && activeServers.includes(server))

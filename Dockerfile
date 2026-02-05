@@ -1,6 +1,9 @@
 # Dev image: deps only, no build. Used by api-dev and web-dev (different commands).
 FROM node:20-alpine AS dev
 WORKDIR /app
+# uv for default MCP servers (fetch, time) via uvx
+RUN apk add --no-cache curl && curl -LsSf https://astral.sh/uv/install.sh | sh && apk del curl
+ENV PATH="/root/.local/bin:$PATH"
 COPY package.json yarn.lock* ./
 COPY tsconfig.base.json ./
 COPY apps/api apps/api/
@@ -17,6 +20,9 @@ RUN yarn build:api && yarn build:web
 FROM node:20-alpine AS api
 WORKDIR /app
 ENV NODE_ENV=production
+# uv for default MCP servers (fetch, time) via uvx
+RUN apk add --no-cache curl && curl -LsSf https://astral.sh/uv/install.sh | sh && apk del curl
+ENV PATH="/root/.local/bin:$PATH"
 COPY package.json yarn.lock* ./
 COPY --from=builder /app/node_modules node_modules/
 COPY --from=builder /app/apps/api/dist apps/api/dist/
