@@ -216,7 +216,6 @@ export async function patchChannels(patch: {
   slack?: Record<string, unknown>;
   email?: Record<string, unknown>;
   whatsapp?: Record<string, unknown>;
-  jira?: Record<string, unknown>;
 }): Promise<{ channels: Record<string, unknown> }> {
   const res = await fetch(`${BASE}/api/channels`, {
     method: "PATCH",

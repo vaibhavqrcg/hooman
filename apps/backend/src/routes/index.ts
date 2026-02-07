@@ -1,0 +1,23 @@
+import type { Express } from "express";
+import type { AppContext } from "./helpers.js";
+import { registerInternalRoutes } from "./internal.js";
+import { registerSettingsRoutes } from "./settings.js";
+import { registerChatRoutes } from "./chat.js";
+import { registerColleagueRoutes } from "./colleagues.js";
+import { registerAuditRoutes } from "./audit.js";
+import { registerChannelRoutes } from "./channels.js";
+import { registerCapabilityRoutes } from "./capabilities.js";
+import { registerScheduleRoutes } from "./schedule.js";
+
+export type { AppContext };
+
+export function registerRoutes(app: Express, ctx: AppContext): void {
+  registerInternalRoutes(app, ctx);
+  registerSettingsRoutes(app, ctx);
+  registerChatRoutes(app, ctx);
+  registerColleagueRoutes(app, ctx);
+  registerAuditRoutes(app, ctx);
+  registerChannelRoutes(app, ctx);
+  registerCapabilityRoutes(app, ctx);
+  registerScheduleRoutes(app, ctx);
+}

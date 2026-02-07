@@ -53,6 +53,11 @@ Install the following on your machine:
   uv python install --default
   ```
   Ensure `uv` and `python` are on your `PATH`.
+- **Go** — Optional; required only if you use the **Slack** channel and want the default Slack MCP (history, search, post). Install [Go](https://go.dev/doc/install) then:
+  ```bash
+  go install github.com/korotovsky/slack-mcp-server@latest
+  ```
+  Ensure the Go bin directory (e.g. `$HOME/go/bin`) is on your `PATH` so `slack-mcp-server` is available.
 
 No separate database server: the app uses Prisma + SQLite and mem0 (in-memory + SQLite history).
 

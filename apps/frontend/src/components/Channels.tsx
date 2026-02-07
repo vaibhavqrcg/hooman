@@ -56,12 +56,11 @@ const SLACK_APP_MANIFEST = {
 } as const;
 import type { ChannelEntry } from "../api";
 import { Button } from "./Button";
-import { Checkbox } from "./Checkbox";
-import { Radio } from "./Radio";
 import { useDialog } from "./Dialog";
-import { Input } from "./Input";
 import { Modal } from "./Modal";
-import { Select } from "./Select";
+import { SlackConfigForm } from "./SlackConfigForm";
+import { EmailConfigForm } from "./EmailConfigForm";
+import { WhatsAppConfigForm } from "./WhatsAppConfigForm";
 
 export function Channels() {
   const dialog = useDialog();
@@ -110,7 +109,6 @@ export function Channels() {
       if (id === "email") patch.email = { ...current.config, enabled: next };
       if (id === "whatsapp")
         patch.whatsapp = { ...current.config, enabled: next };
-      if (id === "jira") patch.jira = { ...current.config, enabled: next };
       await patchChannels(patch);
       load();
     } catch (e) {
@@ -127,7 +125,6 @@ export function Channels() {
       if (id === "slack") patch.slack = config;
       if (id === "email") patch.email = config;
       if (id === "whatsapp") patch.whatsapp = config;
-      if (id === "jira") patch.jira = config;
       await patchChannels(patch);
       setConfigModalChannel(null);
       load();
@@ -146,7 +143,7 @@ export function Channels() {
     );
   }
 
-  const order = ["web", "slack", "email", "whatsapp", "jira"];
+  const order = ["web", "slack", "email", "whatsapp"];
   const list = order
     .map((id) => channels?.[id])
     .filter(Boolean) as ChannelEntry[];
@@ -158,8 +155,7 @@ export function Channels() {
           Channels
         </h2>
         <p className="text-xs md:text-sm text-hooman-muted">
-          Manage where Hooman receives messages (web, Slack, email, Jira).
-          Sending is handled by colleagues.
+          Manage where Hooman receives messages (web, Slack, email, WhatsApp).
         </p>
       </header>
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 min-h-0">
@@ -390,14 +386,6 @@ function ConfigModal({
           saving={saving}
         />
       )}
-      {channel.id === "jira" && (
-        <JiraConfigForm
-          id={formId}
-          config={config}
-          onSave={onSave}
-          saving={saving}
-        />
-      )}
     </Modal>
   );
 }
@@ -447,448 +435,5 @@ function WhatsAppConnectionBlock({
         </p>
       )}
     </div>
-  );
-}
-
-function SlackConfigForm({
-  id,
-  config,
-  onSave,
-  saving,
-}: {
-  id: string;
-  config: Record<string, unknown>;
-  onSave: (c: Record<string, unknown>) => void;
-  saving: boolean;
-}) {
-  const connectAsOptions = [
-    { value: "bot", label: "Bot" },
-    { value: "user", label: "User" },
-  ] as const;
-  const [connectAs, setConnectAs] = useState<"bot" | "user">(
-    (config.connectAs as "bot" | "user") ?? "user",
-  );
-  const [appToken, setAppToken] = useState(String(config.appToken ?? ""));
-  const [userToken, setUserToken] = useState(String(config.userToken ?? ""));
-  const [designatedUserId, setDesignatedUserId] = useState(
-    String(config.designatedUserId ?? ""),
-  );
-  const [filterMode, setFilterMode] = useState(
-    String(config.filterMode ?? "all"),
-  );
-  const [filterList, setFilterList] = useState(
-    Array.isArray(config.filterList) ? config.filterList.join(", ") : "",
-  );
-
-  return (
-    <form
-      id={id}
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          ...config,
-          enabled: config.enabled ?? false,
-          connectAs,
-          appToken: appToken.trim() || undefined,
-          userToken: userToken.trim() || undefined,
-          designatedUserId:
-            connectAs === "user"
-              ? designatedUserId.trim() || undefined
-              : undefined,
-          filterMode: filterMode || "all",
-          filterList: filterList
-            ? filterList
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        });
-      }}
-    >
-      <div>
-        <span className="block text-sm font-medium text-zinc-300 mb-2">
-          Connect as
-        </span>
-        <div className="flex gap-4">
-          {connectAsOptions.map((opt) => (
-            <Radio
-              key={opt.value}
-              name="slack-connect-as"
-              value={opt.value}
-              checked={connectAs === opt.value}
-              onChange={() => setConnectAs(opt.value)}
-              label={opt.label}
-            />
-          ))}
-        </div>
-      </div>
-      <Input
-        label="App token (xapp-…)"
-        type="password"
-        placeholder="Leave blank to keep current"
-        value={appToken}
-        onChange={(e) => setAppToken(e.target.value)}
-      />
-      <Input
-        label={
-          connectAs === "bot" ? "Bot token (xoxb-…)" : "User token (xoxp-…)"
-        }
-        type="password"
-        placeholder="Leave blank to keep current"
-        value={userToken}
-        onChange={(e) => setUserToken(e.target.value)}
-      />
-      {connectAs === "user" && (
-        <Input
-          label="Designated user ID (optional)"
-          placeholder="Slack user ID for directness (e.g. U01234…)"
-          value={designatedUserId}
-          onChange={(e) => setDesignatedUserId(e.target.value)}
-        />
-      )}
-      <Select
-        label="Filter mode"
-        value={filterMode}
-        onChange={(value) => setFilterMode(value)}
-        options={[
-          { value: "all", label: "All" },
-          { value: "allowlist", label: "Allowlist" },
-          { value: "blocklist", label: "Blocklist" },
-        ]}
-      />
-      {filterMode !== "all" && (
-        <Input
-          label="Filter list (comma-separated IDs)"
-          placeholder="User or channel IDs"
-          value={filterList}
-          onChange={(e) => setFilterList(e.target.value)}
-        />
-      )}
-    </form>
-  );
-}
-
-function EmailConfigForm({
-  id,
-  config,
-  onSave,
-  saving,
-}: {
-  id: string;
-  config: Record<string, unknown>;
-  onSave: (c: Record<string, unknown>) => void;
-  saving: boolean;
-}) {
-  const imap = (config.imap ?? {}) as Record<string, unknown>;
-  const [host, setHost] = useState(String(imap.host ?? ""));
-  const [port, setPort] = useState(String(imap.port ?? "993"));
-  const [user, setUser] = useState(String(imap.user ?? ""));
-  const [password, setPassword] = useState(String(imap.password ?? ""));
-  const [tls, setTls] = useState(imap.tls !== false);
-  const [pollIntervalMinutes, setPollIntervalMinutes] = useState(
-    String(
-      Math.max(1, Math.round((Number(config.pollIntervalMs) || 60000) / 60000)),
-    ),
-  );
-  const [folders, setFolders] = useState(
-    Array.isArray(config.folders) ? config.folders.join(", ") : "INBOX",
-  );
-  const [identityAddresses, setIdentityAddresses] = useState(
-    Array.isArray(config.identityAddresses)
-      ? config.identityAddresses.join(", ")
-      : "",
-  );
-  const [filterMode, setFilterMode] = useState(
-    String(config.filterMode ?? "all"),
-  );
-  const [filterList, setFilterList] = useState(
-    Array.isArray(config.filterList) ? config.filterList.join(", ") : "",
-  );
-
-  return (
-    <form
-      id={id}
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          ...config,
-          enabled: config.enabled ?? false,
-          imap: { host, port: parseInt(port, 10) || 993, user, password, tls },
-          pollIntervalMs:
-            Math.max(1, parseInt(pollIntervalMinutes, 10) || 1) * 60 * 1000,
-          folders: folders
-            ? folders
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-          identityAddresses: identityAddresses
-            ? identityAddresses
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-          filterMode: filterMode || "all",
-          filterList: filterList
-            ? filterList
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        });
-      }}
-    >
-      <Input
-        label="IMAP host"
-        value={host}
-        onChange={(e) => setHost(e.target.value)}
-      />
-      <Input
-        label="IMAP port"
-        type="number"
-        value={port}
-        onChange={(e) => setPort(e.target.value)}
-      />
-      <Input
-        label="IMAP user"
-        value={user}
-        onChange={(e) => setUser(e.target.value)}
-      />
-      <Input
-        label="IMAP password"
-        type="password"
-        placeholder="Leave blank to keep current"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <Checkbox
-        id="email-tls"
-        checked={tls}
-        onChange={setTls}
-        label="Use TLS"
-      />
-      <Input
-        label="Poll interval (minutes)"
-        type="number"
-        min={1}
-        value={pollIntervalMinutes}
-        onChange={(e) => setPollIntervalMinutes(e.target.value)}
-      />
-      <Input
-        label="Folders (comma-separated)"
-        placeholder="INBOX"
-        value={folders}
-        onChange={(e) => setFolders(e.target.value)}
-      />
-      <Input
-        label="Identity addresses (To/CC/BCC, comma-separated)"
-        placeholder="me@example.com"
-        value={identityAddresses}
-        onChange={(e) => setIdentityAddresses(e.target.value)}
-      />
-      <p className="text-xs text-hooman-muted -mt-2">
-        Leave empty to use the IMAP inbox user as your identity for directness.
-      </p>
-      <Select
-        label="Filter mode"
-        value={filterMode}
-        onChange={(value) => setFilterMode(value)}
-        options={[
-          { value: "all", label: "All" },
-          { value: "allowlist", label: "Allowlist" },
-          { value: "blocklist", label: "Blocklist" },
-        ]}
-      />
-      {filterMode !== "all" && (
-        <Input
-          label="Filter list (addresses/domains, comma-separated)"
-          value={filterList}
-          onChange={(e) => setFilterList(e.target.value)}
-        />
-      )}
-    </form>
-  );
-}
-
-function WhatsAppConfigForm({
-  id,
-  config,
-  onSave,
-  saving,
-}: {
-  id: string;
-  config: Record<string, unknown>;
-  onSave: (c: Record<string, unknown>) => void;
-  saving: boolean;
-}) {
-  const [sessionPath, setSessionPath] = useState(
-    String(config.sessionPath ?? ""),
-  );
-  const [filterMode, setFilterMode] = useState(
-    String(config.filterMode ?? "all"),
-  );
-  const [filterList, setFilterList] = useState(
-    Array.isArray(config.filterList) ? config.filterList.join(", ") : "",
-  );
-
-  return (
-    <form
-      id={id}
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          ...config,
-          enabled: config.enabled ?? false,
-          sessionPath: sessionPath.trim(),
-          filterMode: filterMode || "all",
-          filterList: filterList
-            ? filterList
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        });
-      }}
-    >
-      <Input
-        label="Session folder (optional)"
-        placeholder="default"
-        value={sessionPath}
-        onChange={(e) => setSessionPath(e.target.value)}
-      />
-      <Select
-        label="Filter mode"
-        value={filterMode}
-        onChange={(value) => setFilterMode(value)}
-        options={[
-          { value: "all", label: "All" },
-          { value: "allowlist", label: "Allowlist" },
-          { value: "blocklist", label: "Blocklist" },
-        ]}
-      />
-      {filterMode !== "all" && (
-        <Input
-          label="Filter list (numbers/group IDs, comma-separated)"
-          value={filterList}
-          onChange={(e) => setFilterList(e.target.value)}
-        />
-      )}
-    </form>
-  );
-}
-
-function JiraConfigForm({
-  id,
-  config,
-  onSave,
-  saving,
-}: {
-  id: string;
-  config: Record<string, unknown>;
-  onSave: (c: Record<string, unknown>) => void;
-  saving: boolean;
-}) {
-  const [baseUrl, setBaseUrl] = useState(
-    String(config.baseUrl ?? "https://your-domain.atlassian.net"),
-  );
-  const [email, setEmail] = useState(String(config.email ?? ""));
-  const [apiToken, setApiToken] = useState(String(config.apiToken ?? ""));
-  const [pollIntervalMinutes, setPollIntervalMinutes] = useState(
-    String(
-      Math.max(
-        1,
-        Math.round((Number(config.pollIntervalMs) || 300000) / 60000),
-      ),
-    ),
-  );
-  const [jql, setJql] = useState(
-    String(config.jql ?? "assignee = currentUser() ORDER BY updated DESC"),
-  );
-  const [filterMode, setFilterMode] = useState(
-    String(config.filterMode ?? "all"),
-  );
-  const [filterList, setFilterList] = useState(
-    Array.isArray(config.filterList) ? config.filterList.join(", ") : "",
-  );
-
-  return (
-    <form
-      id={id}
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onSave({
-          ...config,
-          enabled: config.enabled ?? false,
-          baseUrl: baseUrl.trim(),
-          email: email.trim(),
-          apiToken: apiToken.trim() || undefined,
-          pollIntervalMs:
-            Math.max(1, parseInt(pollIntervalMinutes, 10) || 5) * 60 * 1000,
-          jql: jql.trim() || undefined,
-          filterMode: filterMode || "all",
-          filterList: filterList
-            ? filterList
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-            : undefined,
-        });
-      }}
-    >
-      <Input
-        label="Jira base URL"
-        placeholder="https://your-domain.atlassian.net"
-        value={baseUrl}
-        onChange={(e) => setBaseUrl(e.target.value)}
-      />
-      <Input
-        label="Atlassian account email"
-        type="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <Input
-        label="API token"
-        type="password"
-        placeholder="Leave blank to keep current (from id.atlassian.com)"
-        value={apiToken}
-        onChange={(e) => setApiToken(e.target.value)}
-      />
-      <Input
-        label="Poll interval (minutes)"
-        type="number"
-        min={1}
-        value={pollIntervalMinutes}
-        onChange={(e) => setPollIntervalMinutes(e.target.value)}
-      />
-      <Input
-        label="JQL (optional)"
-        placeholder="assignee = currentUser() ORDER BY updated DESC"
-        value={jql}
-        onChange={(e) => setJql(e.target.value)}
-      />
-      <Select
-        label="Filter mode (by project)"
-        value={filterMode}
-        onChange={(value) => setFilterMode(value)}
-        options={[
-          { value: "all", label: "All projects" },
-          { value: "allowlist", label: "Allowlist" },
-          { value: "blocklist", label: "Blocklist" },
-        ]}
-      />
-      {filterMode !== "all" && (
-        <Input
-          label="Filter list (project keys, comma-separated)"
-          placeholder="PROJ, DEV"
-          value={filterList}
-          onChange={(e) => setFilterList(e.target.value)}
-        />
-      )}
-    </form>
   );
 }

@@ -5,39 +5,36 @@ import cors from "cors";
 import { Server as SocketServer } from "socket.io";
 
 const debug = createDebug("hooman:api");
-import { EventRouter } from "./lib/events/event-router.js";
-import { createMemoryService } from "./lib/data/memory.js";
-import { AuditLog } from "./lib/api/audit.js";
-import { ColleagueEngine } from "./lib/agents/colleagues.js";
-import type {
-  ScheduleService,
-  ScheduledTask,
-} from "./lib/schedule/scheduler.js";
+import { EventRouter } from "./events/event-router.js";
+import { createMemoryService } from "./data/memory.js";
+import { AuditLog } from "./audit.js";
+import { ColleagueEngine } from "./agents/colleagues.js";
+import type { ScheduleService, ScheduledTask } from "./data/scheduler.js";
 import { randomUUID } from "crypto";
-import type { ResponsePayload } from "./lib/api/audit.js";
-import { getConfig, loadPersisted } from "./lib/core/config.js";
-import { registerRoutes } from "./lib/api/routes.js";
-import { initDb } from "./lib/data/db.js";
-import { initChatHistory } from "./lib/data/chat-history.js";
-import { initAttachmentStore } from "./lib/data/attachment-store.js";
-import { createContext } from "./lib/agents/context.js";
-import { initColleagueStore } from "./lib/data/colleagues-store.js";
-import { initScheduleStore } from "./lib/data/schedule-store.js";
-import { initMCPConnectionsStore } from "./lib/data/mcp-connections-store.js";
+import type { ResponsePayload } from "./audit.js";
+import { getConfig, loadPersisted } from "./config.js";
+import { registerRoutes } from "./routes/index.js";
+import { initDb } from "./data/db.js";
+import { initChatHistory } from "./data/chat-history.js";
+import { initAttachmentStore } from "./data/attachment-store.js";
+import { createContext } from "./agents/context.js";
+import { initColleagueStore } from "./data/colleagues-store.js";
+import { initScheduleStore } from "./data/schedule-store.js";
+import { initMCPConnectionsStore } from "./data/mcp-connections-store.js";
 import {
   createAuditStore,
   AUDIT_ENTRY_ADDED_CHANNEL,
-} from "./lib/data/audit-store.js";
-import { createSubscriber, publish } from "./lib/data/pubsub.js";
-import { createEventQueue } from "./lib/events/event-queue.js";
-import { initRedis } from "./lib/data/redis.js";
-import { initKillSwitch } from "./lib/agents/kill-switch.js";
+} from "./data/audit-store.js";
+import { createSubscriber, publish } from "./data/pubsub.js";
+import { createEventQueue } from "./events/event-queue.js";
+import { initRedis } from "./data/redis.js";
+import { initKillSwitch } from "./agents/kill-switch.js";
 import { env } from "./env.js";
 import {
   getWorkspaceAttachmentsDir,
   WORKSPACE_ROOT,
   WORKSPACE_MCPCWD,
-} from "./lib/core/workspace.js";
+} from "./workspace.js";
 import { mkdirSync } from "fs";
 
 async function main() {

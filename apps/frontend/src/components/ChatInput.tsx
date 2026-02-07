@@ -1,0 +1,347 @@
+import { useState, useRef, useCallback } from "react";
+import {
+  X,
+  Loader2,
+  Paperclip,
+  FileText,
+  Plus,
+  ListOrdered,
+} from "lucide-react";
+import {
+  uploadAttachments,
+  getAttachmentUrl,
+  type ChatAttachmentMeta,
+} from "../api";
+import { Button } from "./Button";
+import { VoiceBar, VoiceButton, useVoice } from "./ChatVoice";
+
+const MAX_ATTACHMENTS = 10;
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+const ALLOWED_ATTACHMENT_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  "text/x-c",
+  "text/x-c++",
+  "text/x-csharp",
+  "text/css",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/x-golang",
+  "text/html",
+  "text/x-java",
+  "text/javascript",
+  "application/json",
+  "text/markdown",
+  "application/pdf",
+  "text/x-php",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/x-python",
+  "text/x-script.python",
+  "text/x-ruby",
+  "application/x-sh",
+  "text/x-tex",
+  "application/typescript",
+  "text/plain",
+]);
+
+const ACCEPT_ATTRIBUTE = [...ALLOWED_ATTACHMENT_MIME_TYPES].sort().join(",");
+
+function isAllowedMime(type: string): boolean {
+  return ALLOWED_ATTACHMENT_MIME_TYPES.has(
+    type.toLowerCase().split(";")[0].trim(),
+  );
+}
+
+function isImageMime(mimeType: string): boolean {
+  return mimeType.startsWith("image/");
+}
+
+interface PendingAttachment {
+  id: string;
+  originalName: string;
+  mimeType: string;
+  preview?: string;
+  uploading?: boolean;
+}
+
+export interface QueuedMessage {
+  text: string;
+  attachment_ids?: string[];
+  attachment_metas?: ChatAttachmentMeta[];
+}
+
+export function ChatInput({
+  onSend,
+  queue,
+  onRemoveFromQueue,
+}: {
+  loading?: boolean;
+  onSend: (
+    text: string,
+    attachmentIds?: string[],
+    attachmentMetas?: ChatAttachmentMeta[],
+  ) => void;
+  queue: QueuedMessage[];
+  onRemoveFromQueue: (index: number) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const formRef = useRef<HTMLFormElement>(null);
+  const pendingVoiceRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const voice = useVoice((text) => {
+    setInput(text);
+    pendingVoiceRef.current = text;
+    formRef.current?.requestSubmit();
+  });
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const list = Array.from(files).filter(
+      (f) => f.size <= MAX_FILE_SIZE && isAllowedMime(f.type),
+    );
+    if (list.length === 0) return;
+    setAttachments((prev) => {
+      const space = MAX_ATTACHMENTS - prev.length;
+      const toAdd = list.slice(0, space).map((file) => ({
+        id: `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        originalName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        uploading: true as const,
+      }));
+      return [...prev, ...toAdd];
+    });
+    (async () => {
+      try {
+        const { attachments: serverAttachments } =
+          await uploadAttachments(list);
+        setAttachments((prev) => {
+          const withoutUploading = prev.filter((a) => !a.uploading);
+          const uploaded = serverAttachments.map(
+            (a: ChatAttachmentMeta) =>
+              ({
+                id: a.id,
+                originalName: a.originalName,
+                mimeType: a.mimeType,
+                preview: isImageMime(a.mimeType)
+                  ? getAttachmentUrl(a.id)
+                  : undefined,
+              }) as PendingAttachment,
+          );
+          return [...withoutUploading, ...uploaded];
+        });
+      } catch {
+        setAttachments((prev) => prev.filter((a) => !a.uploading));
+      }
+    })();
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((x) => x.id !== id));
+  }, []);
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const text = pendingVoiceRef.current ?? input.trim();
+    if (pendingVoiceRef.current) pendingVoiceRef.current = null;
+    const ready = attachments.filter((a) => !a.uploading);
+    if (!text && ready.length === 0) return;
+    if (attachments.some((a) => a.uploading)) return;
+    const messageText = text || "(attachments)";
+    setInput("");
+    const attachmentIds = ready.length ? ready.map((a) => a.id) : undefined;
+    const attachmentMetas = ready.length
+      ? ready.map((a) => ({
+          id: a.id,
+          originalName: a.originalName,
+          mimeType: a.mimeType,
+        }))
+      : undefined;
+    setAttachments([]);
+    onSend(messageText, attachmentIds, attachmentMetas);
+  }
+
+  return (
+    <form
+      ref={formRef}
+      onSubmit={handleSubmit}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.currentTarget.classList.add("ring-2", "ring-hooman-accent/50");
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          e.currentTarget.classList.remove("ring-2", "ring-hooman-accent/50");
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        e.currentTarget.classList.remove("ring-2", "ring-hooman-accent/50");
+        if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+      }}
+      className="p-3 md:p-4 border-t border-hooman-border shrink-0 rounded-lg transition-shadow"
+    >
+      {voice.error && (
+        <div className="mb-3 rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-sm text-red-400">
+          {voice.error}
+        </div>
+      )}
+      {voice.active && (
+        <VoiceBar
+          transcript={voice.transcript}
+          segment={voice.segment}
+          onCancel={voice.cancel}
+          onConfirm={voice.confirm}
+        />
+      )}
+      {attachments.length > 0 && (
+        <div className="mb-3 pb-3 border-b border-hooman-border/50">
+          <p className="flex items-center gap-2 text-xs text-hooman-muted mb-2">
+            <Paperclip className="w-3.5 h-3.5" />
+            {attachments.length} attached
+            {attachments.some((a) => a.uploading) && (
+              <span className="flex items-center gap-1.5 text-hooman-accent">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden />
+                Uploading…
+              </span>
+            )}
+          </p>
+          <ul className="flex flex-wrap gap-2">
+            {attachments.map((a) => (
+              <li
+                key={a.id}
+                className="flex items-center gap-2 rounded-lg bg-hooman-surface border border-hooman-border overflow-hidden group"
+              >
+                {a.uploading ? (
+                  <span className="w-12 h-12 flex items-center justify-center shrink-0 bg-hooman-border/50 text-hooman-muted">
+                    <Loader2 className="w-5 h-5 animate-spin" aria-hidden />
+                  </span>
+                ) : a.preview ? (
+                  <img
+                    src={a.preview}
+                    alt=""
+                    className="w-12 h-12 object-cover shrink-0"
+                  />
+                ) : (
+                  <span className="w-12 h-12 flex items-center justify-center shrink-0 bg-hooman-border/50 text-hooman-muted">
+                    <FileText className="w-5 h-5" />
+                  </span>
+                )}
+                <span className="max-w-[120px] truncate text-sm text-zinc-300 px-1">
+                  {a.originalName}
+                </span>
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  size="icon"
+                  icon={<X className="w-4 h-4" />}
+                  onClick={() => removeAttachment(a.id)}
+                  title="Remove attachment"
+                  aria-label="Remove attachment"
+                  disabled={a.uploading}
+                  className="shrink-0 p-1 opacity-70 hover:opacity-100"
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {queue.length > 0 && (
+        <div className="mb-3 pb-3 border-b border-hooman-border/50">
+          <p className="flex items-center gap-2 text-xs text-hooman-muted mb-2">
+            <ListOrdered className="w-3.5 h-3.5" />
+            {queue.length} queued
+          </p>
+          <ul className="space-y-1.5">
+            {queue.map((item, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2 rounded-lg bg-hooman-surface/80 border border-hooman-border px-3 py-2 text-sm text-zinc-300"
+              >
+                <span className="flex-1 truncate">
+                  {item.text}
+                  {item.attachment_ids?.length
+                    ? ` (+${item.attachment_ids.length} attachment${item.attachment_ids.length === 1 ? "" : "s"})`
+                    : ""}
+                </span>
+                <Button
+                  variant="danger"
+                  iconOnly
+                  size="icon"
+                  icon={<X className="w-4 h-4" />}
+                  onClick={() => onRemoveFromQueue(i)}
+                  title="Remove from queue"
+                  aria-label="Remove from queue"
+                  className="shrink-0 p-1"
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="flex gap-2 min-w-0">
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPT_ATTRIBUTE}
+          className="hidden"
+          onChange={(e) => {
+            const files = e.target.files;
+            if (files?.length) addFiles(files);
+            e.target.value = "";
+          }}
+          aria-hidden
+        />
+        <div className="flex-1 min-w-0 relative">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              const files: File[] = [];
+              for (let i = 0; i < items.length; i++) {
+                const file = items[i].getAsFile();
+                if (file) files.push(file);
+              }
+              if (files.length) {
+                e.preventDefault();
+                addFiles(files);
+              }
+            }}
+            placeholder="Type a message or drag & drop / paste files…"
+            className="w-full rounded-xl bg-hooman-surface border border-hooman-border pl-11 pr-11 md:pl-12 md:pr-12 py-2.5 md:py-3 text-sm md:text-base text-zinc-200 placeholder:text-hooman-muted focus:outline-none focus:ring-2 focus:ring-hooman-accent/50"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach files"
+            aria-label="Attach files"
+            disabled={attachments.length >= MAX_ATTACHMENTS}
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 w-8 h-8 md:w-9 md:h-9 rounded-full flex items-center justify-center bg-hooman-surface text-hooman-muted hover:text-zinc-200 hover:bg-hooman-surface/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+          </button>
+          <VoiceButton
+            connecting={voice.connecting}
+            active={voice.active}
+            onStart={voice.start}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!input.trim() && attachments.length === 0}
+          className="rounded-xl bg-hooman-accent px-4 md:px-5 py-2.5 md:py-3 text-sm md:text-base text-white font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+        >
+          Send
+        </button>
+      </div>
+    </form>
+  );
+}

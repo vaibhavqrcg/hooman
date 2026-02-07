@@ -1,106 +1,92 @@
 /**
- * WhatsApp worker: runs the WhatsApp channel adapter (Baileys v6), posting events to API via POST /api/internal/dispatch.
+ * WhatsApp worker: runs the WhatsApp channel adapter, posting events to API via POST /api/internal/dispatch.
+ * Subscribes to Redis for MCP requests (hooman:mcp:whatsapp:request) and runs them via the adapter.
  * Respects channel on/off: at startup and when Redis reload flag is set (e.g. after PATCH /api/channels).
  * Run as a separate PM2 process (e.g. pm2 start ecosystem.config.cjs --only whatsapp).
  */
 import createDebug from "debug";
-import { loadPersisted, getChannelsConfig } from "../lib/core/config.js";
-import { createDispatchClient } from "../lib/api/dispatch-client.js";
+import { getChannelsConfig } from "../config.js";
 import {
   startWhatsAppAdapter,
   stopWhatsAppAdapter,
-} from "../lib/channels/whatsapp-adapter.js";
-import { initRedis, closeRedis } from "../lib/data/redis.js";
-import {
-  initReloadWatch,
-  closeReloadWatch,
-} from "../lib/schedule/reload-flag.js";
-import { env } from "../env.js";
+  handleWhatsAppMcpRequest,
+} from "../channels/whatsapp-adapter.js";
+import { createSubscriber, createRpcMessageHandler } from "../data/pubsub.js";
+import { runWorker, type DispatchClient } from "./bootstrap.js";
 
 const debug = createDebug("hooman:workers:whatsapp");
 
-const connectionStatusUrl = () =>
-  `${env.API_BASE_URL.replace(/\/$/, "")}/api/internal/whatsapp-connection`;
+const MCP_REQUEST_CHANNEL = "hooman:mcp:whatsapp:request";
+const MCP_RESPONSE_CHANNEL = "hooman:mcp:whatsapp:response";
+const CONNECTION_REQUEST_CHANNEL = "hooman:whatsapp:connection:request";
+const CONNECTION_RESPONSE_CHANNEL = "hooman:whatsapp:connection:response";
 
-async function runWhatsAppAdapter(
-  client: ReturnType<typeof createDispatchClient>,
-): Promise<void> {
+let mcpSubscriber: ReturnType<typeof createSubscriber> | null = null;
+
+/** Connection state for WhatsApp (QR, status, self identity). API reads this via Redis RPC. */
+let connectionState: {
+  status: "disconnected" | "pairing" | "connected";
+  qr?: string;
+  selfId?: string;
+  selfNumber?: string;
+} = { status: "disconnected" };
+
+async function startAdapter(client: DispatchClient): Promise<void> {
   await stopWhatsAppAdapter();
   await startWhatsAppAdapter(client, () => getChannelsConfig().whatsapp, {
-    onConnectionUpdate: async ({ status, qr, selfId, selfNumber }) => {
-      try {
-        const res = await fetch(connectionStatusUrl(), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(env.INTERNAL_SECRET
-              ? { "X-Internal-Secret": env.INTERNAL_SECRET }
-              : {}),
-          },
-          body: JSON.stringify({ status, qr, selfId, selfNumber }),
-        });
-        if (!res.ok) {
-          debug(
-            "Failed to post connection update to API: %s %s",
-            res.status,
-            res.statusText,
-          );
-        } else if (status === "pairing" && qr) {
-          debug("QR sent to API for Settings UI");
-        } else if (status === "connected") {
-          debug(
-            "Linked; connection open (self: %s)",
-            selfNumber ?? selfId ?? "—",
-          );
-        }
-      } catch (e) {
-        const err = e as NodeJS.ErrnoException & { cause?: { code?: string } };
-        const refused =
-          err?.code === "ECONNREFUSED" || err?.cause?.code === "ECONNREFUSED";
-        if (refused) {
-          debug(
-            "Cannot reach API at %s — is the API process running? QR will not show in Settings until the API is up.",
-            connectionStatusUrl(),
-          );
-        } else {
-          debug("Failed to post connection update: %o", e);
-        }
+    onConnectionUpdate: ({ status, qr, selfId, selfNumber }) => {
+      connectionState =
+        status === "connected"
+          ? { status: "connected", selfId, selfNumber }
+          : status === "pairing" && qr
+            ? { status: "pairing", qr }
+            : { status: "disconnected" };
+      if (status === "pairing" && qr) {
+        debug("QR ready for Settings UI (via RPC)");
+      } else if (status === "connected") {
+        debug(
+          "Linked; connection open (self: %s)",
+          selfNumber ?? selfId ?? "—",
+        );
       }
     },
   });
 }
 
-async function main() {
-  await loadPersisted();
-  const client = createDispatchClient({
-    apiBaseUrl: env.API_BASE_URL,
-    secret: env.INTERNAL_SECRET || undefined,
-  });
-  await runWhatsAppAdapter(client);
-
-  if (env.REDIS_URL) {
-    initRedis(env.REDIS_URL);
-    initReloadWatch(env.REDIS_URL, ["whatsapp"], async () => {
-      debug("Reload flag set; reloading config and restarting adapter");
-      await loadPersisted();
-      void runWhatsAppAdapter(client);
-    });
-  }
-
-  debug("Worker started; posting to %s", env.API_BASE_URL);
-
-  const shutdown = async () => {
-    debug("Shutting down WhatsApp worker…");
-    await closeReloadWatch();
-    await stopWhatsAppAdapter();
-    await closeRedis();
-    process.exit(0);
-  };
-  process.on("SIGINT", () => void shutdown());
-  process.on("SIGTERM", () => void shutdown());
+function setupMcpSubscriber(): void {
+  mcpSubscriber = createSubscriber();
+  if (!mcpSubscriber) return;
+  mcpSubscriber.subscribe(
+    MCP_REQUEST_CHANNEL,
+    createRpcMessageHandler(
+      MCP_RESPONSE_CHANNEL,
+      (method, params) => handleWhatsAppMcpRequest(method, params),
+      (msg) => debug(msg),
+    ),
+  );
+  mcpSubscriber.subscribe(
+    CONNECTION_REQUEST_CHANNEL,
+    createRpcMessageHandler(CONNECTION_RESPONSE_CHANNEL, async (method) => {
+      if (method !== "get_connection_status") {
+        throw new Error(`Unknown method: ${method}`);
+      }
+      return connectionState;
+    }),
+  );
+  debug("MCP + connection RPC subscribers started");
 }
 
-main().catch((err) => {
-  debug("WhatsApp worker failed: %o", err);
-  process.exit(1);
+runWorker({
+  name: "whatsapp",
+  reloadScopes: ["whatsapp"],
+  start: async (client) => {
+    await startAdapter(client);
+    setupMcpSubscriber();
+  },
+  stop: async () => {
+    if (mcpSubscriber) await mcpSubscriber.close();
+    mcpSubscriber = null;
+    await stopWhatsAppAdapter();
+  },
+  onReload: (client) => startAdapter(client),
 });

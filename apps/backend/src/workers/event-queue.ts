@@ -11,29 +11,29 @@ import {
   BatchTraceProcessor,
   startTraceExportLoop,
 } from "@openai/agents";
-import { HumanFriendlyConsoleExporter } from "../lib/agents/tracing.js";
-import { loadPersisted, getConfig } from "../lib/core/config.js";
-import { createEventQueue } from "../lib/events/event-queue.js";
-import { EventRouter } from "../lib/events/event-router.js";
-import { registerEventHandlers } from "../lib/events/event-handlers.js";
-import { createMemoryService } from "../lib/data/memory.js";
-import { AuditLog } from "../lib/api/audit.js";
-import { ColleagueEngine } from "../lib/agents/colleagues.js";
-import { createContext } from "../lib/agents/context.js";
-import { initColleagueStore } from "../lib/data/colleagues-store.js";
-import { initScheduleStore } from "../lib/data/schedule-store.js";
-import { initMCPConnectionsStore } from "../lib/data/mcp-connections-store.js";
-import { initDb } from "../lib/data/db.js";
-import { initChatHistory } from "../lib/data/chat-history.js";
+import { HumanFriendlyConsoleExporter } from "../agents/tracing.js";
+import { loadPersisted, getConfig } from "../config.js";
+import { createEventQueue } from "../events/event-queue.js";
+import { EventRouter } from "../events/event-router.js";
+import { registerEventHandlers } from "../events/event-handlers.js";
+import { createMemoryService } from "../data/memory.js";
+import { AuditLog } from "../audit.js";
+import { ColleagueEngine } from "../agents/colleagues.js";
+import { createContext } from "../agents/context.js";
+import { initColleagueStore } from "../data/colleagues-store.js";
+import { initScheduleStore } from "../data/schedule-store.js";
+import { initMCPConnectionsStore } from "../data/mcp-connections-store.js";
+import { initDb } from "../data/db.js";
+import { initChatHistory } from "../data/chat-history.js";
 import {
   createAuditStore,
   AUDIT_ENTRY_ADDED_CHANNEL,
-} from "../lib/data/audit-store.js";
-import { publish } from "../lib/data/pubsub.js";
-import { initRedis, closeRedis } from "../lib/data/redis.js";
-import { initKillSwitch, closeKillSwitch } from "../lib/agents/kill-switch.js";
+} from "../data/audit-store.js";
+import { publish } from "../data/pubsub.js";
+import { initRedis, closeRedis } from "../data/redis.js";
+import { initKillSwitch, closeKillSwitch } from "../agents/kill-switch.js";
 import { env } from "../env.js";
-import { WORKSPACE_ROOT, WORKSPACE_MCPCWD } from "../lib/core/workspace.js";
+import { WORKSPACE_ROOT, WORKSPACE_MCPCWD } from "../workspace.js";
 
 const debug = createDebug("hooman:workers:event-queue");
 
