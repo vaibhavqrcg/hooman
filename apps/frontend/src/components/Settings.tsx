@@ -3,6 +3,7 @@ import { getConfig, saveConfig, type AppConfig } from "../api";
 import { Checkbox } from "./Checkbox";
 import { Button } from "./Button";
 import { Input } from "./Input";
+import { Textarea } from "./Textarea";
 
 export type { AppConfig };
 
@@ -35,6 +36,8 @@ export function Settings() {
         OPENAI_WEB_SEARCH: form.OPENAI_WEB_SEARCH,
         MCP_USE_SERVER_MANAGER: form.MCP_USE_SERVER_MANAGER,
         OPENAI_TRANSCRIPTION_MODEL: form.OPENAI_TRANSCRIPTION_MODEL,
+        AGENT_NAME: form.AGENT_NAME,
+        AGENT_INSTRUCTIONS: form.AGENT_INSTRUCTIONS,
       });
       setForm({ ...updated });
       setMessage({
@@ -77,29 +80,73 @@ export function Settings() {
               {message.text}
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">
-              OPENAI_API_KEY
-            </label>
-            <Input
-              type="password"
-              value={form.OPENAI_API_KEY}
-              onChange={(e) =>
-                setForm((f) =>
-                  f ? { ...f, OPENAI_API_KEY: e.target.value } : f,
-                )
-              }
-              placeholder="sk-..."
-              className="bg-hooman-surface focus:ring-offset-hooman-surface"
-              autoComplete="off"
-            />
-            <p className="text-xs text-hooman-muted mt-1">
-              Leave empty for no LLM; Hooman will still chat with a fallback.
+          <div className="pt-0">
+            <h3 className="text-sm font-medium text-zinc-300 mb-2">Agent</h3>
+            <p className="text-xs text-hooman-muted mb-3">
+              Name and system instructions for the main concierge agent.
             </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  Agent name
+                </label>
+                <Input
+                  type="text"
+                  value={form.AGENT_NAME ?? ""}
+                  onChange={(e) =>
+                    setForm((f) =>
+                      f ? { ...f, AGENT_NAME: e.target.value } : f,
+                    )
+                  }
+                  placeholder="Hooman"
+                  className="bg-hooman-surface focus:ring-offset-hooman-surface"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  System instructions
+                </label>
+                <Textarea
+                  value={form.AGENT_INSTRUCTIONS ?? ""}
+                  onChange={(e) =>
+                    setForm((f) =>
+                      f ? { ...f, AGENT_INSTRUCTIONS: e.target.value } : f,
+                    )
+                  }
+                  placeholder="Default concierge instructions"
+                  rows={14}
+                  className="bg-hooman-surface focus:ring-offset-hooman-surface font-mono text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="pt-4 border-t border-hooman-border">
+            <h3 className="text-sm font-medium text-zinc-300 mb-2">OpenAI</h3>
+            <div>
+              <label className="block text-sm font-medium text-zinc-300 mb-1">
+                API key
+              </label>
+              <Input
+                type="password"
+                value={form.OPENAI_API_KEY}
+                onChange={(e) =>
+                  setForm((f) =>
+                    f ? { ...f, OPENAI_API_KEY: e.target.value } : f,
+                  )
+                }
+                placeholder="sk-..."
+                className="bg-hooman-surface focus:ring-offset-hooman-surface"
+                autoComplete="off"
+              />
+              <p className="text-xs text-hooman-muted mt-1">
+                Leave empty for no LLM; the agent will still chat with a
+                fallback.
+              </p>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-1">
-              OPENAI_MODEL (chat &amp; memory LLM)
+              Chat and memory model
             </label>
             <Input
               type="text"
@@ -116,7 +163,7 @@ export function Settings() {
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-1">
-              OPENAI_EMBEDDING_MODEL
+              Embedding model
             </label>
             <Input
               type="text"
@@ -136,7 +183,7 @@ export function Settings() {
           </div>
           <div>
             <label className="block text-sm font-medium text-zinc-300 mb-1">
-              OPENAI_TRANSCRIPTION_MODEL (voice input)
+              Voice input (transcription) model
             </label>
             <Input
               type="text"
@@ -168,11 +215,11 @@ export function Settings() {
           </p>
           <div className="pt-4 border-t border-hooman-border">
             <h3 className="text-sm font-medium text-zinc-300 mb-2">
-              MCP server manager
+              MCP servers
             </h3>
             <Checkbox
               id="use-mcp-server-manager"
-              label="Use MCP server manager"
+              label="Use server manager (graceful failures, reconnect)"
               checked={form.MCP_USE_SERVER_MANAGER ?? false}
               onChange={(checked) =>
                 setForm((f) =>

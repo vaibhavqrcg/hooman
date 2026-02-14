@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import type { AppContext } from "./helpers.js";
 import { getParam } from "./helpers.js";
 import { getKillSwitchEnabled } from "../agents/kill-switch.js";
+import { getConfig } from "../config.js";
 
 const debug = createDebug("hooman:routes:chat");
 
@@ -113,7 +114,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
 
   app.post("/api/chat", async (req: Request, res: Response): Promise<void> => {
     if (getKillSwitchEnabled()) {
-      res.status(503).json({ error: "Hooman is paused (kill switch)." });
+      res
+        .status(503)
+        .json({ error: `${getConfig().AGENT_NAME} is paused (kill switch).` });
       return;
     }
     const text = req.body?.text as string;

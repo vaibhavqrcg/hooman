@@ -19,6 +19,8 @@ export function registerSettingsRoutes(app: Express, _ctx: AppContext): void {
       OPENAI_WEB_SEARCH: c.OPENAI_WEB_SEARCH,
       MCP_USE_SERVER_MANAGER: c.MCP_USE_SERVER_MANAGER,
       OPENAI_TRANSCRIPTION_MODEL: c.OPENAI_TRANSCRIPTION_MODEL,
+      AGENT_NAME: c.AGENT_NAME,
+      AGENT_INSTRUCTIONS: c.AGENT_INSTRUCTIONS,
     });
   });
 
@@ -41,6 +43,8 @@ export function registerSettingsRoutes(app: Express, _ctx: AppContext): void {
       OPENAI_TRANSCRIPTION_MODEL: patch.OPENAI_TRANSCRIPTION_MODEL as
         | string
         | undefined,
+      AGENT_NAME: patch.AGENT_NAME as string | undefined,
+      AGENT_INSTRUCTIONS: patch.AGENT_INSTRUCTIONS as string | undefined,
     });
     res.json(updated);
   });

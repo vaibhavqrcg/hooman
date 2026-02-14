@@ -12,6 +12,8 @@ export interface LLMGatewayConfig {
   webSearch?: boolean;
 }
 
+import { getConfig } from "../config.js";
+
 const DEFAULT_MODEL = "gpt-5.2";
 const DEFAULT_MAX_TOKENS = 2048;
 const DEFAULT_TEMPERATURE = 0.7;
@@ -31,7 +33,7 @@ export class LLMGateway {
 
   async complete(messages: LLMMessage[]): Promise<string> {
     if (!this.config.apiKey) {
-      return "[Hooman] No LLM API key configured. Set it in Settings to enable reasoning. I can still chat and remember things in this session.";
+      return `[${getConfig().AGENT_NAME}] No LLM API key configured. Set it in Settings to enable reasoning. I can still chat and remember things in this session.`;
     }
     if (this.config.webSearch) {
       return this.completeOpenAIResponsesAPI(messages);

@@ -256,6 +256,8 @@ export interface AppConfig {
   OPENAI_WEB_SEARCH: boolean;
   MCP_USE_SERVER_MANAGER: boolean;
   OPENAI_TRANSCRIPTION_MODEL: string;
+  AGENT_NAME: string;
+  AGENT_INSTRUCTIONS: string;
 }
 
 export async function getConfig(): Promise<AppConfig> {

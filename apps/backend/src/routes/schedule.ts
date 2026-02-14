@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { AppContext } from "./helpers.js";
 import { getParam } from "./helpers.js";
 import { getKillSwitchEnabled } from "../agents/kill-switch.js";
+import { getConfig } from "../config.js";
 import { setReloadFlag } from "../data/reload-flag.js";
 import { env } from "../env.js";
 
@@ -17,7 +18,9 @@ export function registerScheduleRoutes(app: Express, ctx: AppContext): void {
     "/api/schedule",
     async (req: Request, res: Response): Promise<void> => {
       if (getKillSwitchEnabled()) {
-        res.status(503).json({ error: "Hooman is paused (kill switch)." });
+        res.status(503).json({
+          error: `${getConfig().AGENT_NAME} is paused (kill switch).`,
+        });
         return;
       }
       const { execute_at, intent, context } = req.body ?? {};

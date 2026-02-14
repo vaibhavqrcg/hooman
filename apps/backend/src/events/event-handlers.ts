@@ -62,7 +62,11 @@ export interface EventHandlerDeps {
   context: ContextStore;
   personaEngine: PersonaEngine;
   mcpConnectionsStore: MCPConnectionsStore;
-  getConfig: () => { OPENAI_API_KEY: string; OPENAI_MODEL: string };
+  getConfig: () => {
+    OPENAI_API_KEY: string;
+    OPENAI_MODEL: string;
+    AGENT_NAME: string;
+  };
   auditLog: AuditLog;
   /** When set, called for api-source chat to deliver result (API: resolve pending; worker: POST to API). */
   deliverApiResult?: (
@@ -171,7 +175,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           payload: {
             userInput: text,
             response: assistantText,
-            lastAgentName: lastAgentName ?? "Hooman",
+            lastAgentName: lastAgentName ?? getConfig().AGENT_NAME,
             handoffs: handoffs.map((h) => ({
               type: h.type,
               from: h.agent?.name ?? h.sourceAgent?.name,
@@ -222,7 +226,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
       } else {
         const msg = (err as Error).message;
         assistantText = !config.OPENAI_API_KEY?.trim()
-          ? "[Hooman] No LLM API key configured. Set it in Settings to enable chat."
+          ? `[${getConfig().AGENT_NAME}] No LLM API key configured. Set it in Settings to enable chat.`
           : `Something went wrong: ${msg}. Check API logs.`;
       }
       await context.addToMemory(
@@ -316,7 +320,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           payload: {
             userInput: text,
             response: assistantText,
-            lastAgentName: lastAgentName ?? "Hooman",
+            lastAgentName: lastAgentName ?? getConfig().AGENT_NAME,
             handoffs: handoffs.map((h) => ({
               type: h.type,
               from: h.agent?.name ?? h.sourceAgent?.name,
