@@ -4,10 +4,11 @@ import {
   MCPServerStreamableHttp,
   connectMcpServers,
   hostedMcpTool,
-  setDefaultOpenAIKey,
   tool,
 } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
+import { createOpenAI } from "@ai-sdk/openai";
+import { aisdk } from "@openai/agents-extensions/ai-sdk";
 import { listSkillsFromFs, getSkillContent } from "./skills-cli.js";
 import type { SkillEntry } from "./skills-cli.js";
 import type { PersonaConfig } from "../types.js";
@@ -332,7 +333,11 @@ export async function createHoomanAgentWithMcp(
   agent: ReturnType<typeof Agent.create>;
   closeMcp: () => Promise<void>;
 }> {
-  if (options?.apiKey) setDefaultOpenAIKey(options.apiKey);
+  const config = getConfig();
+  const apiKey = options?.apiKey ?? config.OPENAI_API_KEY;
+  const modelId = options?.model?.trim() || config.OPENAI_MODEL || "gpt-4o";
+  const openaiProvider = createOpenAI({ apiKey: apiKey || undefined });
+  const model = aisdk(openaiProvider(modelId));
 
   const allConnections: MCPConnection[] = [
     ...getAllDefaultMcpConnections(),
@@ -406,6 +411,7 @@ export async function createHoomanAgentWithMcp(
       name: p.id,
       instructions,
       handoffDescription: p.description,
+      model,
       mcpServers: personaServers,
       tools: [readSkillTool, ...personaTools],
     });
@@ -441,6 +447,7 @@ export async function createHoomanAgentWithMcp(
   const agent = Agent.create({
     name: agentName?.trim() || "Hooman",
     instructions: fullInstructions,
+    model,
     handoffs: personaAgents,
     mcpServers: hoomanServers,
   });

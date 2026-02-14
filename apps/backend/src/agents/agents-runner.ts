@@ -1,4 +1,4 @@
-import { Agent, Runner, run } from "@openai/agents";
+import { Agent, run } from "@openai/agents";
 
 /** Simple thread item for building input; we convert to SDK format (content as array) before run(). */
 export type AgentInputItem = { role: "user" | "assistant"; content: string };
@@ -136,22 +136,14 @@ export async function runChat(
     maxTurns: options?.maxTurns ?? 10,
     workflowName: "Hooman chat",
   };
-  const runner = options?.model?.trim()
-    ? new Runner({
-        model: options.model.trim(),
-        workflowName: runOptions.workflowName,
-      })
-    : undefined;
 
   // SDK expects content as array of parts (e.g. input_text / output_text); string content causes item.content.map to throw.
   const protocolInput = toProtocolItems(input, lastUserContent);
-  const result = runner
-    ? await runner.run(
-        agent,
-        protocolInput as Parameters<typeof run>[1],
-        runOptions,
-      )
-    : await run(agent, protocolInput as Parameters<typeof run>[1], runOptions);
+  const result = await run(
+    agent,
+    protocolInput as Parameters<typeof run>[1],
+    runOptions,
+  );
 
   const finalText =
     typeof result.finalOutput === "string"

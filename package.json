@@ -20,6 +20,7 @@
     "restart": "pm2 restart ecosystem.config.cjs"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.29",
     "@anthropic-ai/sdk": "^0.72.1",
     "@azure/identity": "^4.13.0",
     "@azure/search-documents": "^12.2.0",
@@ -28,6 +29,7 @@
     "@mistralai/mistralai": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@openai/agents": "^0.4.5",
+    "@openai/agents-extensions": "^0.4.10",
     "@prisma/client": "5",
     "@qdrant/js-client-rest": "^1.16.2",
     "@slack/bolt": "^4.4.0",
