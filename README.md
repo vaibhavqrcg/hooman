@@ -66,13 +66,14 @@ No separate database server: the app uses Prisma + SQLite and mem0 (in-memory + 
 
 ## Quick start 🚀
 
-Clone the repo, install dependencies, build, and run with PM2:
+Clone the repo, install dependencies, build, start Redis (required for the event queue), and run with PM2:
 
 ```bash
 git clone https://github.com/vaibhavpandeyvpz/hooman.git
 cd hooman
 yarn install
 yarn build
+docker compose up -d redis
 yarn start
 ```
 
