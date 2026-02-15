@@ -73,7 +73,7 @@ git clone https://github.com/vaibhavpandeyvpz/hooman.git
 cd hooman
 yarn install
 yarn build
-npx pm2 start ecosystem.config.cjs
+yarn start
 ```
 
 - **API** → http://localhost:3000
