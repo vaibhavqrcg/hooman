@@ -98,6 +98,41 @@ Create a `.env` from `.env.example` if you need to override defaults (e.g. `MCP_
 
 ---
 
+## Exposing completions 🌐
+
+To let external apps (e.g. ElevenLabs) call Hooman’s agent via the OpenAI-compatible chat completions endpoint, expose it with ngrok. Only `/v1/chat/completions` and `/chat/completions` are reachable over the tunnel; all other endpoints return 403 when the request comes from the public URL.
+
+1. **Run the API on the host** (e.g. `yarn dev:api` or `yarn start`) so it listens on port 3000.
+
+2. **Configure ngrok.** Copy the example config and add your auth token:
+
+   ```bash
+   cp ngrok.example.yml ngrok.yml
+   ```
+
+   In `.env`, set `NGROK_AUTHTOKEN` (get it from [ngrok dashboard](https://dashboard.ngrok.com/get-started/your-authtoken)). In `ngrok.yml`, set a reserved `domain` if you have one, or remove the `domain` line to use a random ngrok URL.
+
+3. **Start the ngrok tunnel:**
+
+   ```bash
+   docker compose up -d ngrok
+   ```
+
+   The tunnel forwards to `host.docker.internal:3000`. The ngrok UI is at http://localhost:4040.
+
+4. **Use the endpoint.** In Hooman **Settings**, set **Completions API key** (this is the Bearer token for the completions API). Then call:
+   ```bash
+   curl -X POST https://<your-ngrok-domain>/v1/chat/completions \
+     -H "Authorization: Bearer YOUR_COMPLETIONS_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"messages":[{"role":"user","content":"Hello"}]}'
+   ```
+   Replace `<your-ngrok-domain>` with your ngrok host (e.g. `powerful-tiger-notable.ngrok-free.app`) and `YOUR_COMPLETIONS_API_KEY` with the value from Settings.
+
+Access to the app at http://localhost:3000 (and the UI at :5173) is unchanged; only requests that arrive via the ngrok host (or another non-local client) are restricted to the two completions paths.
+
+---
+
 ## Environment 📋
 
 When running locally, create a `.env` from `.env.example`. Key variables:

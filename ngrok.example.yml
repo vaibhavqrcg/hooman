@@ -1,0 +1,11 @@
+version: 2
+
+region: eu
+
+tunnels:
+  api:
+    proto: http
+    addr: host.docker.internal:3000
+    # domain: <your custom domain if reserved>
+    schemes:
+      - https

@@ -1,11 +1,27 @@
 # Redis for BullMQ event queue. Start with: docker compose up -d redis
 services:
+  ngrok:
+    image: ngrok/ngrok
+    command:
+      - start
+      - --all
+      - --config
+      - /etc/ngrok.yml
+    ports:
+      - "4040:4040"
+    volumes:
+      - ./ngrok.yml:/etc/ngrok.yml
+    env_file:
+      - .env
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
     volumes:
-      - redis_data:/data
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -13,4 +29,4 @@ services:
       retries: 5
 
 volumes:
-  redis_data:
+  redis-data:
