@@ -61,7 +61,18 @@ const SLACK_APP_MANIFEST = {
   },
   settings: {
     event_subscriptions: {
-      bot_events: ["message.channels", "message.groups", "message.im"],
+      user_events: [
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim",
+      ],
+      bot_events: [
+        "message.channels",
+        "message.groups",
+        "message.im",
+        "message.mpim",
+      ],
     },
     org_deploy_enabled: false,
     socket_mode_enabled: true,
