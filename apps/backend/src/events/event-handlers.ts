@@ -47,10 +47,53 @@ function buildChannelContext(
   return lines.join("\n");
 }
 
-const CHAT_THREAD_LIMIT = 20;
+/** Chunk size when loading history for agent context. Fetch 50, trim to budget, then fetch older 50 and trim again until no space or no more messages. */
+const CHAT_CONTEXT_CHUNK_SIZE = 50;
 
 /** Max time to wait for runChat. After this we deliver a timeout message so the UI doesn't stay on "Thinking...". */
-const CHAT_TIMEOUT_MS = 90_000;
+const CHAT_TIMEOUT_MS = 300_000;
+
+/** Load messages in chunks of 50 via getMessages (last page first): fetch last 50, trim to budget; if there's space, fetch next 50 older, trim again; repeat until budget full or no more messages. Returns thread for runChat. */
+async function getThreadForAgent(
+  context: ContextStore,
+  userId: string,
+): Promise<{
+  thread: Array<{ role: "user" | "assistant"; content: string }>;
+}> {
+  const effectiveMax = getConfig().MAX_INPUT_TOKENS ?? 100_000;
+  let thread: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+  const first = await context.getMessages(userId, {
+    page: 1,
+    pageSize: CHAT_CONTEXT_CHUNK_SIZE,
+  });
+  if (first.total === 0) return { thread };
+
+  const lastPage = Math.ceil(first.total / CHAT_CONTEXT_CHUNK_SIZE) || 1;
+  for (let page = lastPage; page >= 1; page--) {
+    const messages =
+      page === 1 && lastPage === 1
+        ? first.messages
+        : (
+            await context.getMessages(userId, {
+              page,
+              pageSize: CHAT_CONTEXT_CHUNK_SIZE,
+            })
+          ).messages;
+    if (messages.length === 0) break;
+
+    const chunkAsThread = messages.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
+    thread = [...chunkAsThread, ...thread];
+    const previousLen = thread.length - chunkAsThread.length;
+    thread = trimContextToTokenBudget(thread, effectiveMax, RESERVED_TOKENS);
+    if (thread.length <= previousLen) break;
+  }
+
+  return { thread };
+}
 
 class ChatTimeoutError extends Error {
   constructor() {
@@ -126,16 +169,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
     });
     let assistantText = "";
     try {
-      const recent = await context.getRecentMessages(userId, CHAT_THREAD_LIMIT);
-      let thread = recent.map((m) => ({ role: m.role, content: m.text }));
-      let memoryContext = "";
-      const effectiveMax = getConfig().MAX_INPUT_TOKENS ?? 100_000;
-      ({ thread, memoryContext } = trimContextToTokenBudget(
-        thread,
-        memoryContext,
-        effectiveMax,
-        RESERVED_TOKENS,
-      ));
+      const { thread } = await getThreadForAgent(context, userId);
       const connections = await mcpConnectionsStore.getAll();
       const session = await createHoomanRunner({
         connections,
@@ -147,7 +181,6 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           channelMeta as ChannelMeta | undefined,
         );
         const runPromise = session.runChat(thread, text, {
-          memoryContext,
           channelContext,
           attachments: attachmentContents,
         });
@@ -233,14 +266,6 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
             .join(", ");
     const text = `Scheduled task: ${payload.intent}. Context: ${contextStr}.`;
     try {
-      let memoryContext = "";
-      const effectiveMax = getConfig().MAX_INPUT_TOKENS ?? 100_000;
-      ({ memoryContext } = trimContextToTokenBudget(
-        [],
-        memoryContext,
-        effectiveMax,
-        RESERVED_TOKENS,
-      ));
       const connections = await mcpConnectionsStore.getAll();
       const session = await createHoomanRunner({
         connections,
@@ -248,9 +273,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         mcpConnectionsStore,
       });
       try {
-        const { finalOutput } = await session.runChat([], text, {
-          memoryContext,
-        });
+        const { finalOutput } = await session.runChat([], text, {});
         const assistantText =
           finalOutput?.trim() ||
           "Scheduled task completed (no clear response from agent).";
