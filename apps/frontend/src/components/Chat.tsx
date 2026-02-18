@@ -89,15 +89,15 @@ export function Chat() {
             {
               role: "user",
               text: next.text,
-              ...(next.attachment_ids?.length
+              ...(next.attachments?.length
                 ? {
-                    attachment_ids: next.attachment_ids,
+                    attachments: next.attachments,
                     attachment_metas: next.attachment_metas,
                   }
                 : {}),
             },
           ]);
-          sendOne(next.text, next.attachment_ids);
+          sendOne(next.text, next.attachments);
         }
       }
     },
@@ -113,14 +113,14 @@ export function Chat() {
       role: "user",
       text,
       ...(attachmentIds?.length
-        ? { attachment_ids: attachmentIds, attachment_metas: attachmentMetas }
+        ? { attachments: attachmentIds, attachment_metas: attachmentMetas }
         : {}),
     };
     setMessages((prev) => [...prev, userMessage]);
     if (loading) {
       const queued: QueuedMessage = {
         text,
-        attachment_ids: attachmentIds,
+        attachments: attachmentIds,
         attachment_metas: attachmentMetas,
       };
       setQueue((prev) => [...prev, queued]);

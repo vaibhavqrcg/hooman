@@ -9,7 +9,7 @@ export interface ContextStore {
     userId: string,
     userText: string,
     assistantText: string,
-    userAttachmentIds?: string[],
+    userAttachments?: string[],
   ): Promise<void>;
   /** Last N messages in chronological order for agent thread. */
   getRecentMessages(
@@ -19,7 +19,7 @@ export interface ContextStore {
     Array<{
       role: "user" | "assistant";
       text: string;
-      attachment_ids?: string[];
+      attachments?: string[];
     }>
   >;
   /** Paginated messages for GET /api/chat/history. */
@@ -37,9 +37,9 @@ export function createContext(chatHistory: ChatHistoryStore): ContextStore {
       userId: string,
       userText: string,
       assistantText: string,
-      userAttachmentIds?: string[],
+      userAttachments?: string[],
     ): Promise<void> {
-      await chatHistory.addMessage(userId, "user", userText, userAttachmentIds);
+      await chatHistory.addMessage(userId, "user", userText, userAttachments);
       await chatHistory.addMessage(userId, "assistant", assistantText);
     },
 

@@ -94,10 +94,10 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         userId: string;
         userText: string;
         assistantText: string;
-        userAttachmentIds?: string[];
+        userAttachments?: string[];
       };
-      const { userId, userText, assistantText, userAttachmentIds } = data;
-      await context.addTurn(userId, userText, assistantText, userAttachmentIds);
+      const { userId, userText, assistantText, userAttachments } = data;
+      await context.addTurn(userId, userText, assistantText, userAttachments);
     }
   });
 
@@ -107,8 +107,8 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
     const {
       text,
       userId,
+      attachmentContents,
       attachments,
-      attachment_ids,
       channelMeta,
       sourceMessageType,
     } = event.payload;
@@ -149,7 +149,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         const runPromise = session.runChat(thread, text, {
           memoryContext,
           channelContext,
-          attachments,
+          attachments: attachmentContents,
         });
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new ChatTimeoutError()), CHAT_TIMEOUT_MS);
@@ -181,9 +181,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
             userId,
             userText: text,
             assistantText,
-            ...(attachment_ids?.length
-              ? { userAttachmentIds: attachment_ids }
-              : {}),
+            ...(attachments?.length ? { userAttachments: attachments } : {}),
           },
         } as RawDispatchInput);
         if (deliverApiResult && event.source === "api") {
@@ -211,9 +209,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           userId,
           userText: text,
           assistantText,
-          ...(attachment_ids?.length
-            ? { userAttachmentIds: attachment_ids }
-            : {}),
+          ...(attachments?.length ? { userAttachments: attachments } : {}),
         },
       } as RawDispatchInput);
       if (deliverApiResult && event.source === "api") {
