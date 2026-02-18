@@ -36,7 +36,13 @@ Steps when channel context is present:
 
 Before doing any time-critical operation or anything that involves the current date/time (e.g. scheduling, reminders, "in 2 hours", "by tomorrow", interpreting "now" or "today"), use the available time tool to get the current time. Use get_current_time from the _default_time MCP server (or the equivalent time tool if exposed under another name) so your answers and scheduled tasks are based on the actual current time, not guesswork.
 
-Never fabricate tool results. If a tool call fails, report the actual error.`;
+Never fabricate tool results. If a tool call fails, report the actual error.
+
+## Pagination and result size
+
+When a tool accepts pagination or limit parameters (e.g. max_results, limit, per_page, page_size, page), use them. Prefer smaller page sizes (e.g. a few items per request) to stay within context limits.
+If the user asks for "last N" or "recent N" items, pass that as the limit/max (e.g. max_results: N) instead of fetching a large default.
+When a tool has an option to include or exclude full payloads (e.g. include_payload), set it to false or omit full bodies unless the user explicitly needs full content; prefer summaries or metadata when answering "what's in my inbox" or similar.`;
 
 /**
  * Channel-specific formatting instructions appended only when the channel is enabled.
@@ -133,6 +139,8 @@ export interface PersistedConfig {
   DEEPSEEK_API_KEY: string;
   /** Bearer token for OpenAI-compatible /v1/chat/completions endpoint. */
   COMPLETIONS_API_KEY: string;
+  /** Max input tokens (context window). 0 or unset = use 100_000 default. Conversation and memory are trimmed to stay under this. */
+  MAX_INPUT_TOKENS?: number;
 }
 
 /** Full config: persisted + PORT from env. */
@@ -168,6 +176,7 @@ const DEFAULTS: PersistedConfig = {
   MISTRAL_API_KEY: "",
   DEEPSEEK_API_KEY: "",
   COMPLETIONS_API_KEY: "",
+  MAX_INPUT_TOKENS: 0,
 };
 
 let store: PersistedConfig = { ...DEFAULTS };
@@ -273,6 +282,8 @@ export function updateConfig(patch: Partial<PersistedConfig>): PersistedConfig {
     store.DEEPSEEK_API_KEY = String(patch.DEEPSEEK_API_KEY);
   if (patch.COMPLETIONS_API_KEY !== undefined)
     store.COMPLETIONS_API_KEY = String(patch.COMPLETIONS_API_KEY);
+  if (patch.MAX_INPUT_TOKENS !== undefined)
+    store.MAX_INPUT_TOKENS = Math.max(0, Number(patch.MAX_INPUT_TOKENS) || 0);
   persist().catch((err) => debug("persist error: %o", err));
   return { ...store };
 }
@@ -380,6 +391,11 @@ export async function loadPersisted(): Promise<void> {
         store.DEEPSEEK_API_KEY = String(parsed.DEEPSEEK_API_KEY);
       if (parsed.COMPLETIONS_API_KEY !== undefined)
         store.COMPLETIONS_API_KEY = String(parsed.COMPLETIONS_API_KEY);
+      if (parsed.MAX_INPUT_TOKENS !== undefined)
+        store.MAX_INPUT_TOKENS = Math.max(
+          0,
+          Number(parsed.MAX_INPUT_TOKENS) || 0,
+        );
       if (parsed.channels && typeof parsed.channels === "object")
         channelsStore = { ...parsed.channels };
     }
