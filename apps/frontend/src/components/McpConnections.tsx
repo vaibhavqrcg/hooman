@@ -50,7 +50,26 @@ export function McpConnections() {
   const [envEntries, setEnvEntries] = useState<
     { key: string; value: string }[]
   >([]);
+  const [bearerToken, setBearerToken] = useState("");
+  const [headerEntries, setHeaderEntries] = useState<
+    { key: string; value: string }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
+
+  function buildHeaders(): Record<string, string> | undefined {
+    const custom = headerEntries
+      .filter((e) => e.key.trim() !== "")
+      .reduce(
+        (acc, e) => ({ ...acc, [e.key.trim()]: e.value }),
+        {} as Record<string, string>,
+      );
+    const withAuth =
+      bearerToken && bearerToken !== "***"
+        ? { ...custom, Authorization: `Bearer ${bearerToken}` }
+        : custom;
+    if (Object.keys(withAuth).length === 0) return undefined;
+    return withAuth;
+  }
 
   function load() {
     setLoading(true);
@@ -69,6 +88,8 @@ export function McpConnections() {
     setEditing("new");
     setArgsRaw("");
     setEnvEntries([]);
+    setBearerToken("");
+    setHeaderEntries([]);
     setForm({
       type: "hosted",
       server_label: "",
@@ -87,8 +108,20 @@ export function McpConnections() {
           ? Object.entries(c.env).map(([key, value]) => ({ key, value }))
           : [],
       );
+      setBearerToken("");
+      setHeaderEntries([]);
+    } else if (c.type === "streamable_http" || c.type === "hosted") {
+      const headers = c.headers ?? {};
+      const auth = headers.Authorization ?? "";
+      setBearerToken(auth.replace(/^Bearer\s+/i, ""));
+      const rest = Object.entries(headers)
+        .filter(([k]) => k !== "Authorization")
+        .map(([key, value]) => ({ key, value }));
+      setHeaderEntries(rest);
     } else {
       setEnvEntries([]);
+      setBearerToken("");
+      setHeaderEntries([]);
     }
   }
 
@@ -105,6 +138,14 @@ export function McpConnections() {
           setError("Server URL is required for hosted MCP.");
           return;
         }
+        let headers = buildHeaders();
+        if (
+          editing !== "new" &&
+          bearerToken === "***" &&
+          (form.headers?.Authorization ?? "").startsWith("Bearer ")
+        ) {
+          headers = { ...headers, Authorization: "Bearer ***" };
+        }
         const conn: MCPConnectionHosted = {
           ...base,
           type: "hosted",
@@ -112,16 +153,25 @@ export function McpConnections() {
           server_url: form.server_url.trim(),
           require_approval: form.require_approval ?? "never",
           streaming: form.streaming ?? false,
+          headers,
         };
         if (editing === "new") await createMCPConnection(conn);
         else await updateMCPConnection(conn.id, conn);
       } else if (form.type === "streamable_http") {
+        let headers = buildHeaders();
+        if (
+          editing !== "new" &&
+          bearerToken === "***" &&
+          (form.headers?.Authorization ?? "").startsWith("Bearer ")
+        ) {
+          headers = { ...headers, Authorization: "Bearer ***" };
+        }
         const conn: MCPConnectionStreamableHttp = {
           ...base,
           type: "streamable_http",
           name: form.name ?? "",
           url: form.url ?? "",
-          headers: form.headers,
+          headers,
           timeout_seconds: form.timeout_seconds,
           cache_tools_list: form.cache_tools_list ?? true,
           max_retry_attempts: form.max_retry_attempts,
@@ -231,6 +281,8 @@ export function McpConnections() {
                 setArgsRaw("");
                 setEnvEntries([]);
               }
+              setBearerToken("");
+              setHeaderEntries([]);
               setForm((f) => ({
                 ...f,
                 type,
@@ -293,6 +345,79 @@ export function McpConnections() {
                   setForm((f) => ({ ...f, streaming: checked }))
                 }
               />
+              <Input
+                label="Bearer token (optional)"
+                placeholder="OAuth or API token for servers that require auth"
+                type="password"
+                value={bearerToken}
+                onChange={(e) => setBearerToken(e.target.value)}
+                autoComplete="off"
+              />
+              <div>
+                <div className="block text-xs text-hooman-muted uppercase tracking-wide mb-1">
+                  Custom headers (optional)
+                </div>
+                <div className="space-y-2">
+                  {headerEntries.map((entry, i) => (
+                    <div key={i} className="flex gap-2 items-center flex-wrap">
+                      <Input
+                        placeholder="Key"
+                        value={entry.key}
+                        onChange={(e) =>
+                          setHeaderEntries((prev) =>
+                            prev.map((p, j) =>
+                              j === i ? { ...p, key: e.target.value } : p,
+                            ),
+                          )
+                        }
+                        className="flex-1 min-w-[100px]"
+                      />
+                      <Input
+                        placeholder="Value"
+                        value={entry.value}
+                        onChange={(e) =>
+                          setHeaderEntries((prev) =>
+                            prev.map((p, j) =>
+                              j === i ? { ...p, value: e.target.value } : p,
+                            ),
+                          )
+                        }
+                        className="flex-1 min-w-[100px]"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        icon={<Trash2 />}
+                        aria-label="Remove header"
+                        onClick={() =>
+                          setHeaderEntries((prev) =>
+                            prev.filter((_, j) => j !== i),
+                          )
+                        }
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Plus />}
+                    onClick={() =>
+                      setHeaderEntries((prev) => [
+                        ...prev,
+                        { key: "", value: "" },
+                      ])
+                    }
+                  >
+                    Add header
+                  </Button>
+                </div>
+              </div>
             </>
           )}
           {form.type === "streamable_http" && (
@@ -313,6 +438,79 @@ export function McpConnections() {
                   setForm((f) => ({ ...f, url: e.target.value }))
                 }
               />
+              <Input
+                label="Bearer token (optional)"
+                placeholder="OAuth or API token for servers that require auth"
+                type="password"
+                value={bearerToken}
+                onChange={(e) => setBearerToken(e.target.value)}
+                autoComplete="off"
+              />
+              <div>
+                <div className="block text-xs text-hooman-muted uppercase tracking-wide mb-1">
+                  Custom headers (optional)
+                </div>
+                <div className="space-y-2">
+                  {headerEntries.map((entry, i) => (
+                    <div key={i} className="flex gap-2 items-center flex-wrap">
+                      <Input
+                        placeholder="Key"
+                        value={entry.key}
+                        onChange={(e) =>
+                          setHeaderEntries((prev) =>
+                            prev.map((p, j) =>
+                              j === i ? { ...p, key: e.target.value } : p,
+                            ),
+                          )
+                        }
+                        className="flex-1 min-w-[100px]"
+                      />
+                      <Input
+                        placeholder="Value"
+                        value={entry.value}
+                        onChange={(e) =>
+                          setHeaderEntries((prev) =>
+                            prev.map((p, j) =>
+                              j === i ? { ...p, value: e.target.value } : p,
+                            ),
+                          )
+                        }
+                        className="flex-1 min-w-[100px]"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        icon={<Trash2 />}
+                        aria-label="Remove header"
+                        onClick={() =>
+                          setHeaderEntries((prev) =>
+                            prev.filter((_, j) => j !== i),
+                          )
+                        }
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Plus />}
+                    onClick={() =>
+                      setHeaderEntries((prev) => [
+                        ...prev,
+                        { key: "", value: "" },
+                      ])
+                    }
+                  >
+                    Add header
+                  </Button>
+                </div>
+              </div>
               <Input
                 label="Timeout (seconds)"
                 placeholder="10"

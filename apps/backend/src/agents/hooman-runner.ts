@@ -520,6 +520,7 @@ export async function createHoomanRunner(options?: {
               transport: {
                 type: "http",
                 url: hosted.server_url,
+                headers: hosted.headers,
               },
             });
             clients.push({ client, id: c.id });

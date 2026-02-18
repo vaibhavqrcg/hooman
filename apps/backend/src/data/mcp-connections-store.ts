@@ -35,6 +35,7 @@ function payloadToConnection(
       server_url: String(d.server_url ?? ""),
       require_approval: (d.require_approval as "always" | "never") ?? "never",
       streaming: d.streaming as boolean | undefined,
+      headers: d.headers as Record<string, string> | undefined,
       created_at: d.created_at as string | undefined,
     } as MCPConnectionHosted;
   }

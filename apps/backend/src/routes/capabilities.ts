@@ -18,6 +18,19 @@ import {
 
 const debug = createDebug("hooman:routes:capabilities");
 
+function maskConnectionForResponse(c: MCPConnection): MCPConnection {
+  if (
+    (c.type === "streamable_http" || c.type === "hosted") &&
+    c.headers?.Authorization
+  ) {
+    return {
+      ...c,
+      headers: { ...c.headers, Authorization: "Bearer ***" },
+    };
+  }
+  return c;
+}
+
 export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
   const { mcpConnectionsStore } = ctx;
 
@@ -38,7 +51,7 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
 
   app.get("/api/mcp/connections", async (_req: Request, res: Response) => {
     const connections = await mcpConnectionsStore.getAll();
-    res.json({ connections });
+    res.json({ connections: connections.map(maskConnectionForResponse) });
   });
 
   app.post(
@@ -68,6 +81,7 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
           server_url: serverUrl,
           require_approval: body.require_approval ?? "never",
           streaming: body.streaming ?? false,
+          headers: body.headers,
           created_at,
         };
         conn = c;
@@ -109,7 +123,7 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
         return;
       }
       await mcpConnectionsStore.addOrUpdate(conn);
-      res.status(201).json({ connection: conn });
+      res.status(201).json({ connection: maskConnectionForResponse(conn) });
     },
   );
 
@@ -128,8 +142,22 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
         ...patch,
         id: existing.id,
       } as MCPConnection;
+      if (
+        (merged.type === "streamable_http" || merged.type === "hosted") &&
+        merged.headers?.Authorization === "Bearer ***" &&
+        (existing as MCPConnectionHosted | MCPConnectionStreamableHttp).headers
+          ?.Authorization
+      ) {
+        (merged as MCPConnectionHosted | MCPConnectionStreamableHttp).headers =
+          {
+            ...merged.headers,
+            Authorization: (
+              existing as MCPConnectionHosted | MCPConnectionStreamableHttp
+            ).headers!.Authorization,
+          };
+      }
       await mcpConnectionsStore.addOrUpdate(merged);
-      res.json({ connection: merged });
+      res.json({ connection: maskConnectionForResponse(merged) });
     },
   );
 

@@ -275,6 +275,8 @@ export interface MCPConnectionHosted {
   require_approval: MCPRequireApproval;
   /** When true, use streaming for hosted MCP results. */
   streaming?: boolean;
+  /** Optional headers (e.g. Bearer token for OAuth). */
+  headers?: Record<string, string>;
   created_at?: string;
 }
 

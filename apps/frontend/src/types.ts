@@ -33,6 +33,7 @@ export interface MCPConnectionHosted {
   server_url: string;
   require_approval: MCPRequireApproval | Record<string, MCPRequireApproval>;
   streaming?: boolean;
+  headers?: Record<string, string>;
   created_at?: string;
 }
 
