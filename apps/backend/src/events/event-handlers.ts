@@ -124,25 +124,11 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         ...(sourceMessageType ? { sourceMessageType } : {}),
       },
     });
-    const sourceLabel =
-      event.source === "api"
-        ? "ui"
-        : sourceMessageType === "audio"
-          ? `${event.source} (voice)`
-          : event.source;
-    await context.addToMemory(
-      [{ role: "user", content: `[${sourceLabel}] ${text}` }],
-      { userId, metadata: { source: event.source } },
-    );
     let assistantText = "";
     try {
       const recent = await context.getRecentMessages(userId, CHAT_THREAD_LIMIT);
       let thread = recent.map((m) => ({ role: m.role, content: m.text }));
-      const memories = await context.search(text, { userId, limit: 5 });
-      let memoryContext =
-        memories.length > 0
-          ? memories.map((m) => `- ${m.memory}`).join("\n")
-          : "";
+      let memoryContext = "";
       const effectiveMax = getConfig().MAX_INPUT_TOKENS ?? 100_000;
       ({ thread, memoryContext } = trimContextToTokenBudget(
         thread,
@@ -188,10 +174,6 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           eventId: event.id,
           userInput: text,
         });
-        await context.addToMemory(
-          [{ role: "assistant", content: assistantText }],
-          { userId, metadata: { source: event.source } },
-        );
         await eventRouter.dispatch({
           source: "api",
           type: "chat.turn_completed",
@@ -222,10 +204,6 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         const msg = (err as Error).message;
         assistantText = `Something went wrong: ${msg}. Check API logs.`;
       }
-      await context.addToMemory(
-        [{ role: "assistant", content: assistantText }],
-        { userId, metadata: { source: event.source } },
-      );
       await eventRouter.dispatch({
         source: "api",
         type: "chat.turn_completed",
@@ -258,19 +236,8 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
             .map(([k, v]) => `${k}=${String(v)}`)
             .join(", ");
     const text = `Scheduled task: ${payload.intent}. Context: ${contextStr}.`;
-    await context.addToMemory(
-      [{ role: "user", content: `[scheduler] ${text}` }],
-      { userId: "default", metadata: { source: "scheduler" } },
-    );
     try {
-      const memories = await context.search(text, {
-        userId: "default",
-        limit: 5,
-      });
-      let memoryContext =
-        memories.length > 0
-          ? memories.map((m) => `- ${m.memory}`).join("\n")
-          : "";
+      let memoryContext = "";
       const effectiveMax = getConfig().MAX_INPUT_TOKENS ?? 100_000;
       ({ memoryContext } = trimContextToTokenBudget(
         [],
@@ -312,20 +279,12 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           eventId: event.id,
           userInput: text,
         });
-        await context.addToMemory(
-          [{ role: "assistant", content: assistantText }],
-          { userId: "default", metadata: { source: "scheduler" } },
-        );
       } finally {
         await session.closeMcp();
       }
     } catch (err) {
       debug("scheduled task handler error: %o", err);
       const msg = (err as Error).message;
-      await context.addToMemory(
-        [{ role: "assistant", content: `Scheduled task failed: ${msg}` }],
-        { userId: "default", metadata: { source: "scheduler", error: true } },
-      );
       await auditLog.appendAuditEntry({
         type: "scheduled_task",
         payload: {
