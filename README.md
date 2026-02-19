@@ -89,9 +89,9 @@ yarn start
 ```
 
 - **API** → http://localhost:3000
-- **Web UI** → http://localhost:5173
+- With `yarn dev`: **Web UI** → http://localhost:5173
 
-Set your **LLM provider** and API key (or credentials) in **Settings**, then chat with Hooman. Configure MCP connections and skills in **Capabilities**. Supported providers: OpenAI, Azure, Anthropic, Amazon Bedrock, Google, Google Vertex, Mistral, DeepSeek.
+`yarn start` runs the API and workers only (no process on 5173). For the web UI locally, use `yarn dev` (which includes the frontend dev server) or serve the built `apps/frontend/dist` yourself. Set your **LLM provider** and API key (or credentials) in **Settings**, then chat with Hooman. Configure MCP connections and skills in **Capabilities**. Supported providers: OpenAI, Azure, Anthropic, Amazon Bedrock, Google, Google Vertex, Mistral, DeepSeek.
 
 To stop: `yarn stop` (or `npx pm2 stop ecosystem.config.cjs`).
 
@@ -213,7 +213,7 @@ cp .env.example .env
 yarn hash-password
 # Build API and frontend
 yarn build
-# Start API, web, and workers with PM2
+# Start API and workers with PM2
 yarn start
 # Configure PM2 to start on system boot (run the sudo command it prints)
 npx pm2 startup
@@ -287,7 +287,7 @@ All runtime data is stored under **`workspace/`** at project root: `hooman.db` (
 | `yarn dev:slack`     | Slack worker only.                                                                              |
 | `yarn dev:whatsapp`  | WhatsApp worker only.                                                                           |
 | `yarn build`         | Build API and web app.                                                                          |
-| `yarn start`         | Start API and web with PM2 (production).                                                        |
+| `yarn start`         | Start API and workers with PM2 (production). Frontend is served by nginx in deployment.         |
 | `yarn stop`          | Stop PM2 processes.                                                                             |
 | `yarn restart`       | Restart PM2 processes.                                                                          |
 | `yarn hash-password` | Generate argon2id hash for `WEB_AUTH_PASSWORD_HASH`. Optionally pass `--password=yourpassword`. |
