@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getConfig,
   saveConfig,
@@ -37,6 +37,7 @@ const TRANSCRIPTION_PROVIDER_OPTIONS: {
 export function Settings() {
   const [form, setForm] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: "ok" | "err";
@@ -93,6 +94,7 @@ export function Settings() {
         type: "ok",
         text: "Settings saved. LLM, memory, and MCP use these values for new requests.",
       });
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setMessage({ type: "err", text: (e as Error).message });
     } finally {
@@ -116,7 +118,10 @@ export function Settings() {
           Your API keys and how Hooman thinks and remembers.
         </p>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0"
+      >
         <form onSubmit={handleSubmit} className="max-w-xl space-y-4">
           {message && (
             <div
