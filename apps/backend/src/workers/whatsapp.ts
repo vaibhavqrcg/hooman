@@ -10,8 +10,10 @@ import {
   startWhatsAppAdapter,
   stopWhatsAppAdapter,
   handleWhatsAppMcpRequest,
+  sendMessageToChat,
 } from "../channels/whatsapp-adapter.js";
 import { createSubscriber, createRpcMessageHandler } from "../data/pubsub.js";
+import { RESPONSE_DELIVERY_CHANNEL } from "../types.js";
 import { runWorker, type DispatchClient } from "./bootstrap.js";
 
 const debug = createDebug("hooman:workers:whatsapp");
@@ -73,7 +75,25 @@ function setupMcpSubscriber(): void {
       return connectionState;
     }),
   );
-  debug("MCP + connection RPC subscribers started");
+  mcpSubscriber.subscribe(RESPONSE_DELIVERY_CHANNEL, (raw) => {
+    try {
+      const payload = JSON.parse(raw) as {
+        channel?: string;
+        chatId?: string;
+        text?: string;
+      };
+      if (payload.channel !== "whatsapp") return;
+      const chatId = payload.chatId;
+      const text = payload.text;
+      if (typeof chatId !== "string" || typeof text !== "string") return;
+      sendMessageToChat(chatId, text).catch((err) => {
+        debug("response_delivery whatsapp send error: %o", err);
+      });
+    } catch (err) {
+      debug("response_delivery parse/handle error: %o", err);
+    }
+  });
+  debug("MCP + connection RPC + response delivery subscribers started");
 }
 
 runWorker({

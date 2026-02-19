@@ -25,6 +25,7 @@ import { publish } from "../data/pubsub.js";
 import { initRedis, closeRedis } from "../data/redis.js";
 import { initKillSwitch, closeKillSwitch } from "../agents/kill-switch.js";
 import { env } from "../env.js";
+import { RESPONSE_DELIVERY_CHANNEL } from "../types.js";
 import { WORKSPACE_ROOT, WORKSPACE_MCPCWD } from "../workspace.js";
 
 const debug = createDebug("hooman:workers:event-queue");
@@ -85,6 +86,9 @@ async function main() {
         const text = await res.text();
         throw new Error(`chat-result ${res.status}: ${text}`);
       }
+    },
+    publishResponseDelivery: (payload) => {
+      publish(RESPONSE_DELIVERY_CHANNEL, JSON.stringify(payload));
     },
   });
 
