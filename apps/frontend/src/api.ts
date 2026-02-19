@@ -57,6 +57,8 @@ export interface ChatAttachmentMeta {
 export interface ChatHistoryMessage {
   role: "user" | "assistant";
   text: string;
+  /** ISO timestamp from server. */
+  timestamp?: string;
   attachments?: string[];
   attachment_metas?: ChatAttachmentMeta[];
 }
@@ -265,18 +267,15 @@ export interface AppConfig {
   LLM_PROVIDER?: LLMProviderId;
   TRANSCRIPTION_PROVIDER?: TranscriptionProviderId;
   OPENAI_API_KEY: string;
-  OPENAI_MODEL: string;
-  OPENAI_WEB_SEARCH: boolean;
+  CHAT_MODEL: string;
   MCP_USE_SERVER_MANAGER: boolean;
-  OPENAI_TRANSCRIPTION_MODEL: string;
+  TRANSCRIPTION_MODEL: string;
   AGENT_NAME: string;
   AGENT_INSTRUCTIONS: string;
   AZURE_RESOURCE_NAME?: string;
   AZURE_API_KEY?: string;
   AZURE_API_VERSION?: string;
-  AZURE_TRANSCRIPTION_DEPLOYMENT?: string;
   DEEPGRAM_API_KEY?: string;
-  DEEPGRAM_TRANSCRIPTION_MODEL?: string;
   ANTHROPIC_API_KEY?: string;
   AWS_REGION?: string;
   AWS_ACCESS_KEY_ID?: string;

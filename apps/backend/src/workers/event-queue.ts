@@ -6,7 +6,7 @@
 import createDebug from "debug";
 import { randomUUID } from "crypto";
 import { mkdirSync } from "fs";
-import { loadPersisted } from "../config.js";
+import { getConfig, loadPersisted } from "../config.js";
 import { createEventQueue } from "../events/event-queue.js";
 import { EventRouter } from "../events/event-router.js";
 import { registerEventHandlers } from "../events/event-handlers.js";
@@ -24,6 +24,8 @@ import {
 import { publish } from "../data/pubsub.js";
 import { initRedis, closeRedis } from "../data/redis.js";
 import { initKillSwitch, closeKillSwitch } from "../agents/kill-switch.js";
+import { McpManager } from "../agents/mcp-manager.js";
+import { initReloadWatch, closeReloadWatch } from "../data/reload-flag.js";
 import { env } from "../env.js";
 import { RESPONSE_DELIVERY_CHANNEL } from "../types.js";
 import { WORKSPACE_ROOT, WORKSPACE_MCPCWD } from "../workspace.js";
@@ -61,6 +63,41 @@ async function main() {
   });
   const auditLog = new AuditLog(auditStore);
 
+  let mcpManager: McpManager | undefined;
+  const useMcpManager = getConfig().MCP_USE_SERVER_MANAGER;
+  if (useMcpManager) {
+    mcpManager = new McpManager(mcpConnectionsStore, scheduler, {
+      connectTimeoutMs: env.MCP_CONNECT_TIMEOUT_MS,
+      closeTimeoutMs: env.MCP_CLOSE_TIMEOUT_MS,
+      auditLog,
+    });
+    debug("MCP Server Manager enabled");
+  }
+  initReloadWatch(env.REDIS_URL, ["mcp"], async () => {
+    debug("MCP reload triggered; re-reading config");
+    await loadPersisted();
+    const use = getConfig().MCP_USE_SERVER_MANAGER;
+    if (use && !mcpManager) {
+      mcpManager = new McpManager(mcpConnectionsStore, scheduler, {
+        connectTimeoutMs: env.MCP_CONNECT_TIMEOUT_MS,
+        closeTimeoutMs: env.MCP_CLOSE_TIMEOUT_MS,
+        auditLog,
+      });
+      debug("MCP Server Manager reload: enabled, manager created");
+    } else if (use && mcpManager) {
+      await mcpManager.reload();
+      debug(
+        "MCP Server Manager reload: enabled, session reloaded (manager not cleared)",
+      );
+    } else if (!use && mcpManager) {
+      await mcpManager.reload();
+      mcpManager = undefined;
+      debug("MCP Server Manager reload: disabled, manager cleared");
+    } else {
+      debug("MCP Server Manager reload: disabled, no manager (no change)");
+    }
+  });
+
   const eventRouter = new EventRouter();
   registerEventHandlers({
     eventRouter,
@@ -71,6 +108,7 @@ async function main() {
     publishResponseDelivery: (payload) => {
       publish(RESPONSE_DELIVERY_CHANNEL, JSON.stringify(payload));
     },
+    getMcpManager: () => mcpManager,
   });
 
   const eventQueue = createEventQueue({ connection: env.REDIS_URL });
@@ -90,8 +128,10 @@ async function main() {
 
   const shutdown = async () => {
     debug("Shutting down event-queue worker…");
+    await closeReloadWatch();
     await closeKillSwitch();
     await eventQueue.close();
+    await mcpManager?.reload();
     await closeRedis();
     process.exit(0);
   };

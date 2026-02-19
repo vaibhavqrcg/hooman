@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   getConfig,
   saveConfig,
@@ -37,6 +37,7 @@ const TRANSCRIPTION_PROVIDER_OPTIONS: {
 export function Settings() {
   const [form, setForm] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{
     type: "ok" | "err";
@@ -45,7 +46,12 @@ export function Settings() {
 
   useEffect(() => {
     getConfig()
-      .then((c) => setForm({ ...c }))
+      .then((c) =>
+        setForm({
+          ...c,
+          MCP_USE_SERVER_MANAGER: Boolean(c.MCP_USE_SERVER_MANAGER),
+        }),
+      )
       .catch((e) => setMessage({ type: "err", text: (e as Error).message }))
       .finally(() => setLoading(false));
   }, []);
@@ -60,18 +66,15 @@ export function Settings() {
         LLM_PROVIDER: form.LLM_PROVIDER ?? "openai",
         TRANSCRIPTION_PROVIDER: form.TRANSCRIPTION_PROVIDER ?? "openai",
         OPENAI_API_KEY: form.OPENAI_API_KEY,
-        OPENAI_MODEL: form.OPENAI_MODEL,
-        OPENAI_WEB_SEARCH: form.OPENAI_WEB_SEARCH,
+        CHAT_MODEL: form.CHAT_MODEL,
         MCP_USE_SERVER_MANAGER: form.MCP_USE_SERVER_MANAGER,
-        OPENAI_TRANSCRIPTION_MODEL: form.OPENAI_TRANSCRIPTION_MODEL,
+        TRANSCRIPTION_MODEL: form.TRANSCRIPTION_MODEL,
         AGENT_NAME: form.AGENT_NAME,
         AGENT_INSTRUCTIONS: form.AGENT_INSTRUCTIONS,
         AZURE_RESOURCE_NAME: form.AZURE_RESOURCE_NAME,
         AZURE_API_KEY: form.AZURE_API_KEY,
         AZURE_API_VERSION: form.AZURE_API_VERSION,
-        AZURE_TRANSCRIPTION_DEPLOYMENT: form.AZURE_TRANSCRIPTION_DEPLOYMENT,
         DEEPGRAM_API_KEY: form.DEEPGRAM_API_KEY,
-        DEEPGRAM_TRANSCRIPTION_MODEL: form.DEEPGRAM_TRANSCRIPTION_MODEL,
         ANTHROPIC_API_KEY: form.ANTHROPIC_API_KEY,
         AWS_REGION: form.AWS_REGION,
         AWS_ACCESS_KEY_ID: form.AWS_ACCESS_KEY_ID,
@@ -91,6 +94,7 @@ export function Settings() {
         type: "ok",
         text: "Settings saved. LLM, memory, and MCP use these values for new requests.",
       });
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e) {
       setMessage({ type: "err", text: (e as Error).message });
     } finally {
@@ -114,7 +118,10 @@ export function Settings() {
           Your API keys and how Hooman thinks and remembers.
         </p>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0"
+      >
         <form onSubmit={handleSubmit} className="max-w-xl space-y-4">
           {message && (
             <div
@@ -263,10 +270,10 @@ export function Settings() {
                       </label>
                       <Input
                         type="text"
-                        value={form.OPENAI_MODEL}
+                        value={form.CHAT_MODEL}
                         onChange={(e) =>
                           setForm((f) =>
-                            f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                            f ? { ...f, CHAT_MODEL: e.target.value } : f,
                           )
                         }
                         placeholder="gpt-5.2, gpt-4o, etc."
@@ -285,13 +292,13 @@ export function Settings() {
                     </label>
                     <Input
                       type="text"
-                      value={form.OPENAI_TRANSCRIPTION_MODEL ?? ""}
+                      value={form.TRANSCRIPTION_MODEL ?? ""}
                       onChange={(e) =>
                         setForm((f) =>
                           f
                             ? {
                                 ...f,
-                                OPENAI_TRANSCRIPTION_MODEL: e.target.value,
+                                TRANSCRIPTION_MODEL: e.target.value,
                               }
                             : f,
                         )
@@ -370,10 +377,10 @@ export function Settings() {
                     </label>
                     <Input
                       type="text"
-                      value={form.OPENAI_MODEL}
+                      value={form.CHAT_MODEL}
                       onChange={(e) =>
                         setForm((f) =>
-                          f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                          f ? { ...f, CHAT_MODEL: e.target.value } : f,
                         )
                       }
                       placeholder="Deployment name"
@@ -387,17 +394,17 @@ export function Settings() {
                 {(form.TRANSCRIPTION_PROVIDER ?? "openai") === "azure" && (
                   <div>
                     <label className="block text-sm font-medium text-zinc-300 mb-1">
-                      Azure – Transcription deployment
+                      Azure – Deployment name
                     </label>
                     <Input
                       type="text"
-                      value={form.AZURE_TRANSCRIPTION_DEPLOYMENT ?? ""}
+                      value={form.TRANSCRIPTION_MODEL ?? ""}
                       onChange={(e) =>
                         setForm((f) =>
                           f
                             ? {
                                 ...f,
-                                AZURE_TRANSCRIPTION_DEPLOYMENT: e.target.value,
+                                TRANSCRIPTION_MODEL: e.target.value,
                               }
                             : f,
                         )
@@ -438,10 +445,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="claude-3-5-sonnet-20241022, claude-3-opus, etc."
@@ -529,10 +536,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="anthropic.claude-3-5-sonnet-v2, etc."
@@ -574,10 +581,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="gemini-2.0-flash, gemini-1.5-pro, etc."
@@ -653,10 +660,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="gemini-2.0-flash, gemini-1.5-pro, etc."
@@ -693,10 +700,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="mistral-large-latest, mistral-small, etc."
@@ -733,10 +740,10 @@ export function Settings() {
                   </label>
                   <Input
                     type="text"
-                    value={form.OPENAI_MODEL}
+                    value={form.CHAT_MODEL}
                     onChange={(e) =>
                       setForm((f) =>
-                        f ? { ...f, OPENAI_MODEL: e.target.value } : f,
+                        f ? { ...f, CHAT_MODEL: e.target.value } : f,
                       )
                     }
                     placeholder="deepseek-chat, deepseek-reasoner, etc."
@@ -780,13 +787,13 @@ export function Settings() {
                     </label>
                     <Input
                       type="text"
-                      value={form.DEEPGRAM_TRANSCRIPTION_MODEL ?? ""}
+                      value={form.TRANSCRIPTION_MODEL ?? ""}
                       onChange={(e) =>
                         setForm((f) =>
                           f
                             ? {
                                 ...f,
-                                DEEPGRAM_TRANSCRIPTION_MODEL: e.target.value,
+                                TRANSCRIPTION_MODEL: e.target.value,
                               }
                             : f,
                         )
@@ -831,18 +838,6 @@ export function Settings() {
             </div>
           </div>
 
-          <Checkbox
-            id="web-search"
-            checked={form.OPENAI_WEB_SEARCH ?? false}
-            onChange={(checked) =>
-              setForm((f) => (f ? { ...f, OPENAI_WEB_SEARCH: checked } : f))
-            }
-            label="Enable web search"
-          />
-          <p className="text-xs text-hooman-muted -mt-2">
-            When enabled, chat uses the Responses API with web search so the
-            model can look up current information.
-          </p>
           <div className="pt-4 border-t border-hooman-border">
             <h3 className="text-sm font-medium text-zinc-300 mb-2">
               MCP servers
@@ -852,8 +847,8 @@ export function Settings() {
               label="Use server manager (graceful failures, reconnect)"
               checked={form.MCP_USE_SERVER_MANAGER ?? false}
               onChange={(checked) =>
-                setForm((f) =>
-                  f ? { ...f, MCP_USE_SERVER_MANAGER: checked } : f,
+                setForm((prev) =>
+                  prev ? { ...prev, MCP_USE_SERVER_MANAGER: checked } : prev,
                 )
               }
             />
