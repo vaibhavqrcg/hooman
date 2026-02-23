@@ -87,8 +87,12 @@ async function main() {
   const chatHistory = await initChatHistory();
   const attachmentStore = await initAttachmentStore(ATTACHMENTS_DATA_DIR);
   const attachmentService = createAttachmentService(attachmentStore);
-  const chatService = createChatService(chatHistory, attachmentService);
   const context = createContext(chatHistory);
+  const chatService = createChatService(
+    chatHistory,
+    attachmentService,
+    context,
+  );
 
   const scheduleStore = await initScheduleStore();
   const mcpConnectionsStore = await initMCPConnectionsStore();
@@ -170,6 +174,11 @@ async function main() {
       try {
         const payload = JSON.parse(raw) as ResponseDeliveryPayload;
         if (payload.channel !== "api") return;
+        if ("skipped" in payload && payload.skipped === true) {
+          io.emit("chat-skipped", { eventId: payload.eventId });
+          return;
+        }
+        if (!("message" in payload)) return;
         const { eventId, message } = payload;
         if (
           typeof eventId !== "string" ||
@@ -200,6 +209,11 @@ async function main() {
       auditLog,
       publishResponseDelivery: (payload) => {
         if (payload.channel !== "api") return;
+        if ("skipped" in payload && payload.skipped === true) {
+          io.emit("chat-skipped", { eventId: payload.eventId });
+          return;
+        }
+        if (!("message" in payload)) return;
         io.emit("chat-result", {
           eventId: payload.eventId,
           message: payload.message,
