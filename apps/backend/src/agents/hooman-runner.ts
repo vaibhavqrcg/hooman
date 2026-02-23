@@ -335,6 +335,12 @@ export async function createHoomanRunner(options?: {
           if (c.type === "stdio") {
             const stdio = c as MCPConnectionStdio;
             const hasArgs = Array.isArray(stdio.args) && stdio.args.length > 0;
+            debug(
+              "Connecting to Stdio MCP: %s (command: %s, args: %j)",
+              c.id,
+              stdio.command,
+              stdio.args,
+            );
             const transport = new Experimental_StdioMCPTransport({
               command: stdio.command,
               args: hasArgs ? stdio.args : [],
@@ -342,11 +348,18 @@ export async function createHoomanRunner(options?: {
               cwd: stdio.cwd?.trim() || DEFAULT_MCP_CWD,
             });
             const client = await createMCPClient({ transport });
+            debug("Connected to %s", c.id);
             clients.push({ client, id: c.id });
           } else if (c.type === "streamable_http") {
             const http = c as MCPConnectionStreamableHttp;
             const hasOAuth =
               http.oauth?.redirect_uri && options?.mcpConnectionsStore;
+            debug(
+              "Connecting to HTTP MCP: %s (url: %s, headers: %j)",
+              c.id,
+              http.url,
+              http.headers,
+            );
             const client = await createMCPClient({
               transport: {
                 type: "http",
@@ -361,11 +374,18 @@ export async function createHoomanRunner(options?: {
                 }),
               },
             });
+            debug("Connected to %s", c.id);
             clients.push({ client, id: c.id });
           } else if (c.type === "hosted") {
             const hosted = c as MCPConnectionHosted;
             const hasOAuth =
               hosted.oauth?.redirect_uri && options?.mcpConnectionsStore;
+            debug(
+              "Connecting to Hosted MCP: %s (server_url: %s, headers: %j)",
+              c.id,
+              hosted.server_url,
+              hosted.headers,
+            );
             const client = await createMCPClient({
               transport: {
                 type: "http",
@@ -380,6 +400,7 @@ export async function createHoomanRunner(options?: {
                 }),
               },
             });
+            debug("Connected to %s", c.id);
             clients.push({ client, id: c.id });
           }
         } catch (err) {
@@ -403,6 +424,13 @@ export async function createHoomanRunner(options?: {
   for (const { client, id } of mcpClients) {
     try {
       const toolSet = await client.tools();
+      const toolNames = Object.keys(toolSet);
+      debug(
+        "MCP client %s tool discovery: %d tools found (%j)",
+        id,
+        toolNames.length,
+        toolNames,
+      );
       const shortId = id.replace(/-/g, "").slice(0, SHORT_CONN_ID_LEN);
       const maxNameLen = MAX_TOOL_NAME_LEN - shortId.length - 1;
       for (const [name, t] of Object.entries(toolSet)) {
@@ -434,11 +462,12 @@ export async function createHoomanRunner(options?: {
     sessionInstructions;
 
   async function closeMcp(): Promise<void> {
-    for (const { client } of mcpClients) {
+    for (const { client, id } of mcpClients) {
       try {
+        debug("Closing MCP client: %s", id);
         await client.close();
       } catch (e) {
-        debug("MCP client close error: %o", e);
+        debug("MCP client %s close error: %o", id, e);
       }
     }
   }

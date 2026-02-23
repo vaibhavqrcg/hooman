@@ -123,11 +123,17 @@ export class McpManager {
         ...getAllDefaultMcpConnections(),
         ...userConnections,
       ];
-      return createHoomanRunner({
+      debug(
+        "Building MCP session: requested connections: %j",
+        connections.map((c) => c.id),
+      );
+      const runner = await createHoomanRunner({
         connections,
         mcpConnectionsStore: this.mcpConnectionsStore,
         auditLog: this.auditLog,
       });
+      debug("Building MCP session done: %s", runner ? "Success" : "Failed");
+      return runner;
     };
     const connectError = new Error(
       "MCP session build timed out (connectTimeoutMs).",
@@ -152,7 +158,11 @@ export class McpManager {
   async reload(): Promise<void> {
     const session = this.cachedSession;
     this.cachedSession = null;
-    if (!session) return;
+    if (!session) {
+      debug("MCP manager reload: no cached session to reload");
+      return;
+    }
+    debug("MCP manager reload: closing existing session");
     const closeError = new Error(
       "MCP session close timed out (closeTimeoutMs).",
     );
