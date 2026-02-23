@@ -74,6 +74,8 @@ export interface PersistedConfig {
   MAX_INPUT_TOKENS?: number;
   /** Max turns (steps) the agent can take per run. Default 999. */
   MAX_TURNS?: number;
+  /** Chat timeout in milliseconds. After this, user gets a timeout message. 0 or unset = 300000 (5 min). */
+  CHAT_TIMEOUT_MS?: number;
 }
 
 /** Full config: persisted + PORT from env. */
@@ -107,6 +109,7 @@ const DEFAULTS: PersistedConfig = {
   COMPLETIONS_API_KEY: "",
   MAX_INPUT_TOKENS: 0,
   MAX_TURNS: 999,
+  CHAT_TIMEOUT_MS: 300_000,
 };
 
 let store: PersistedConfig = { ...DEFAULTS };
@@ -210,6 +213,11 @@ export function updateConfig(patch: Partial<PersistedConfig>): PersistedConfig {
     store.MAX_TURNS = Math.max(
       1,
       Number(patch.MAX_TURNS) || DEFAULTS.MAX_TURNS!,
+    );
+  if (patch.CHAT_TIMEOUT_MS !== undefined)
+    store.CHAT_TIMEOUT_MS = Math.max(
+      0,
+      Number(patch.CHAT_TIMEOUT_MS) || DEFAULTS.CHAT_TIMEOUT_MS!,
     );
   persist().catch((err) => debug("persist error: %o", err));
   return { ...store };
@@ -316,6 +324,11 @@ export async function loadPersisted(): Promise<void> {
         store.MAX_TURNS = Math.max(
           1,
           Number(parsed.MAX_TURNS) || DEFAULTS.MAX_TURNS!,
+        );
+      if (parsed.CHAT_TIMEOUT_MS !== undefined)
+        store.CHAT_TIMEOUT_MS = Math.max(
+          0,
+          Number(parsed.CHAT_TIMEOUT_MS) || DEFAULTS.CHAT_TIMEOUT_MS!,
         );
       if (parsed.channels && typeof parsed.channels === "object")
         channelsStore = { ...parsed.channels };

@@ -289,6 +289,8 @@ export interface AppConfig {
   COMPLETIONS_API_KEY?: string;
   /** Max input tokens (context window). 0 or unset = 100000 default. Conversation and memory are trimmed to stay under this. */
   MAX_INPUT_TOKENS?: number;
+  /** Chat timeout in milliseconds. 0 or unset = 300000 (5 min). */
+  CHAT_TIMEOUT_MS?: number;
 }
 
 export async function getConfig(): Promise<AppConfig> {

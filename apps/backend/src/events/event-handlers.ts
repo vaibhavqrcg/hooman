@@ -18,6 +18,7 @@ import type {
   WhatsAppChannelMeta,
 } from "../types.js";
 import { HOOMAN_SKIP_MARKER } from "../types.js";
+import { getConfig } from "../config.js";
 
 const debug = createDebug("hooman:event-handlers");
 
@@ -50,8 +51,8 @@ function buildChannelContext(
   return lines.join("\n");
 }
 
-/** Max time to wait for runChat. After this we deliver a timeout message so the UI doesn't stay on "Thinking...". */
-const CHAT_TIMEOUT_MS = 300_000;
+/** Default chat timeout when config CHAT_TIMEOUT_MS is 0 or unset. */
+const DEFAULT_CHAT_TIMEOUT_MS = 300_000;
 
 class ChatTimeoutError extends Error {
   constructor() {
@@ -198,8 +199,10 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
           attachments: attachmentContents,
           sessionId: userId,
         });
+        const chatTimeoutMs =
+          getConfig().CHAT_TIMEOUT_MS || DEFAULT_CHAT_TIMEOUT_MS;
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new ChatTimeoutError()), CHAT_TIMEOUT_MS);
+          setTimeout(() => reject(new ChatTimeoutError()), chatTimeoutMs);
         });
         const { finalOutput } = await Promise.race([
           runPromise,
@@ -236,7 +239,9 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
       }
     } catch (err) {
       if (err instanceof ChatTimeoutError) {
-        debug("Chat timed out after %s ms", CHAT_TIMEOUT_MS);
+        const chatTimeoutMs =
+          getConfig().CHAT_TIMEOUT_MS || DEFAULT_CHAT_TIMEOUT_MS;
+        debug("Chat timed out after %s ms", chatTimeoutMs);
         assistantText =
           "This is taking longer than expected. The agent may be using a tool. You can try again or rephrase.";
       } else {

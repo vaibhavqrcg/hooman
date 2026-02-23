@@ -87,6 +87,7 @@ export function Settings() {
         DEEPSEEK_API_KEY: form.DEEPSEEK_API_KEY,
         COMPLETIONS_API_KEY: form.COMPLETIONS_API_KEY,
         MAX_INPUT_TOKENS: form.MAX_INPUT_TOKENS,
+        CHAT_TIMEOUT_MS: form.CHAT_TIMEOUT_MS,
       });
       setForm({ ...updated });
       setMessage({
@@ -199,6 +200,40 @@ export function Settings() {
                 <p className="text-xs text-hooman-muted mt-1">
                   e.g. 200000. 0 or empty = 100000 tokens default. Conversation
                   and memory are trimmed to stay under this.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  Chat timeout (minutes)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={
+                    form.CHAT_TIMEOUT_MS != null
+                      ? String(Math.round(form.CHAT_TIMEOUT_MS / 60_000))
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setForm((f) =>
+                      f
+                        ? {
+                            ...f,
+                            CHAT_TIMEOUT_MS:
+                              v === ""
+                                ? undefined
+                                : Math.max(0, Number(v) || 0) * 60_000,
+                          }
+                        : f,
+                    );
+                  }}
+                  placeholder="e.g. 10 (default 5)"
+                  className="bg-hooman-surface focus:ring-offset-hooman-surface"
+                />
+                <p className="text-xs text-hooman-muted mt-1">
+                  Max time to wait for a chat reply before showing a timeout
+                  message. 0 or empty = 5 minutes. Increase for long tool runs.
                 </p>
               </div>
             </div>

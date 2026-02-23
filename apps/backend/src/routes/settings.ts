@@ -40,6 +40,7 @@ export function registerSettingsRoutes(app: Express, _ctx: AppContext): void {
       DEEPSEEK_API_KEY: c.DEEPSEEK_API_KEY,
       COMPLETIONS_API_KEY: c.COMPLETIONS_API_KEY,
       MAX_INPUT_TOKENS: c.MAX_INPUT_TOKENS,
+      CHAT_TIMEOUT_MS: c.CHAT_TIMEOUT_MS,
     });
   });
 
@@ -89,6 +90,7 @@ export function registerSettingsRoutes(app: Express, _ctx: AppContext): void {
         DEEPSEEK_API_KEY: patch.DEEPSEEK_API_KEY as string | undefined,
         COMPLETIONS_API_KEY: patch.COMPLETIONS_API_KEY as string | undefined,
         MAX_INPUT_TOKENS: patch.MAX_INPUT_TOKENS as number | undefined,
+        CHAT_TIMEOUT_MS: patch.CHAT_TIMEOUT_MS as number | undefined,
       });
 
       res.json(updated);
