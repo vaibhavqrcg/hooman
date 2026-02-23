@@ -883,10 +883,10 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@one710/consciousness@1.0.2":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@one710/consciousness/-/consciousness-1.0.2.tgz#aeaf72802fdb0c558e0eb96eed27db57ec4a2e6d"
-  integrity sha512-ZRHMTEdCc1VSnJ9NdlOEtTxFUOCccmBzIdKIe8BvbVNk/3JNGlt8ZAMJhXGGtglSp6f/YHftn3QGsh8bL9D4og==
+"@one710/consciousness@^1.0.3":
+  version "1.0.3"
+  resolved "https://registry.yarnpkg.com/@one710/consciousness/-/consciousness-1.0.3.tgz#505ea7f6ae4ba4c0576d46e8ef93aad9661772eb"
+  integrity sha512-1GCqmogmx8gytGHGse/Wtj3P/mbI6r1KrzpdOnHOlMrZ8FnLN7wC04EXxg3J55ShdOf3tUOrQAD3aAjMgdO4OQ==
   dependencies:
     "@huggingface/transformers" "^3.8.1"
     "@modelcontextprotocol/sdk" "^1.26.0"

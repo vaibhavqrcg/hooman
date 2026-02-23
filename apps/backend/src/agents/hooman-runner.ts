@@ -224,6 +224,7 @@ export interface RunChatOptions {
   apiKey?: string;
   model?: string;
   maxTurns?: number;
+  sessionId?: string;
   attachments?: Array<{
     name: string;
     contentType: string;
@@ -312,6 +313,7 @@ export async function createHoomanRunner(options?: {
   apiKey?: string;
   model?: string;
   auditLog?: AuditLogAppender;
+  sessionId?: string;
 }): Promise<HoomanRunnerSession> {
   const config = getConfig();
   const model = getHoomanModel(config, {
@@ -421,8 +423,15 @@ export async function createHoomanRunner(options?: {
 
   const { AGENT_INSTRUCTIONS: instructions } = config;
   const userInstructions = (instructions ?? "").trim();
+  const sessionInstructions = options?.sessionId
+    ? `\n\nYour current sessionId is: ${options.sessionId}. Use this for session-scoped memory tools.\n`
+    : "";
+
   const fullSystem =
-    userInstructions + getFullStaticAgentInstructionsAppend() + skillsSection;
+    userInstructions +
+    getFullStaticAgentInstructionsAppend() +
+    skillsSection +
+    sessionInstructions;
 
   async function closeMcp(): Promise<void> {
     for (const { client } of mcpClients) {

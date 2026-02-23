@@ -18,6 +18,6 @@ const vectorStore = new ChromaVectorStore(
   collectionName,
 );
 
-const server = createServer("consciousness", "1.0.0", vectorStore);
+const server = createServer("consciousness", "1.0.3", vectorStore);
 const transport = new StdioServerTransport();
 await server.connect(transport);

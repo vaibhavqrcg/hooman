@@ -226,6 +226,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
             ],
             mcpConnectionsStore,
             auditLog,
+            sessionId: userId,
           });
       try {
         const channelContext = buildChannelContext(
@@ -234,6 +235,7 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         const runPromise = session.runChat(thread, text, {
           channelContext,
           attachments: attachmentContents,
+          sessionId: userId,
         });
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => reject(new ChatTimeoutError()), CHAT_TIMEOUT_MS);
@@ -319,7 +321,11 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
             auditLog,
           });
       try {
-        const { finalOutput } = await session.runChat([], text, {});
+        const { finalOutput } = await session.runChat([], text, {
+          sessionId: payload.context.userId
+            ? String(payload.context.userId)
+            : undefined,
+        });
         const assistantText =
           finalOutput?.trim() ||
           "Scheduled task completed (no clear response from agent).";
