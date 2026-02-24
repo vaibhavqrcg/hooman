@@ -274,6 +274,9 @@ When running locally, create a `.env` from `.env.example`. Key variables:
 | `JWT_SECRET`             | No       | Secret to sign JWTs when web auth is enabled. Use a strong value (e.g. 32+ random bytes).                       |
 | `MCP_CONNECT_TIMEOUT_MS` | No       | Max ms to build the shared MCP session (default 300000 = 5 min).                                                |
 | `MCP_CLOSE_TIMEOUT_MS`   | No       | Max ms to close the session on reload/shutdown (default 10000).                                                 |
+| `PUPPETEER_EXECUTABLE_PATH` | No    | Path to Chrome/Chromium for whatsapp-web.js (Puppeteer). If unset, adapter may use a platform default.          |
+| `CHROMA_URL`             | No       | ChromaDB URL for the memory MCP server (default `http://localhost:8000`).                                       |
+| `CHROMA_COLLECTION`      | No       | ChromaDB collection name for the memory MCP server (default `hooman-memory`).                                   |
 
 All runtime data is stored under **`workspace/`** at project root: `hooman.db` (Prisma), `config.json` (Settings), and `attachments/`. Stdio MCP servers use `workspace/mcpcwd` by default. LLM provider, transcription provider, API keys or credentials, and models are set in the **Settings** UI (persisted by the API), not via env. The **MCP Server Manager** is always enabled in the event-queue worker to reuse one MCP session (active_servers, drop_failed_servers, reconnect).
 
