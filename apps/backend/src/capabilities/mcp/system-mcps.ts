@@ -50,8 +50,10 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       type: "stdio",
       name: "desktop_commander",
       command: "npx",
-      args: ["-y", "@wonderwhy-er/desktop-commander@latest"],
+      args: ["-y", "@wonderwhy-er/desktop-commander@latest", "--no-onboarding"],
       cwd: env.MCP_STDIO_DEFAULT_CWD,
+      tool_filter:
+        "!get_config,!set_config_value,!get_usage_stats,!get_recent_tool_calls,!give_feedback_to_desktop_commander",
     },
     {
       id: "_default_memory",
