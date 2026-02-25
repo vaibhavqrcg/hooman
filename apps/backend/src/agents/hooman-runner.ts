@@ -3,20 +3,11 @@
  */
 import { createMCPClient } from "@ai-sdk/mcp";
 import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
-import { createOpenAI } from "@ai-sdk/openai";
-import { createAzure } from "@ai-sdk/azure";
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { createVertex } from "@ai-sdk/google-vertex";
-import { createMistral } from "@ai-sdk/mistral";
-import { createDeepSeek } from "@ai-sdk/deepseek";
-import { generateText, tool, stepCountIs, jsonSchema } from "ai";
+import { getHoomanModel } from "./model-provider.js";
+import { generateText, stepCountIs } from "ai";
 import type { ModelMessage } from "ai";
-import {
-  listSkillsFromFs,
-  getSkillContent,
-} from "../capabilities/skills/skills-cli.js";
+import { listSkillsFromFs } from "../capabilities/skills/skills-cli.js";
+import { readSkillTool } from "../capabilities/skills/skills-tool.js";
 import type { SkillEntry } from "../capabilities/skills/skills-cli.js";
 import type {
   AuditLogEntry,
@@ -25,7 +16,6 @@ import type {
   MCPConnectionStreamableHttp,
   MCPConnectionStdio,
 } from "../types.js";
-import type { AppConfig } from "../config.js";
 import { getConfig, getFullStaticAgentInstructionsAppend } from "../config.js";
 import type { MCPConnectionsStore } from "../capabilities/mcp/connections-store.js";
 import { createOAuthProvider } from "../capabilities/mcp/oauth-provider.js";
@@ -59,7 +49,6 @@ function truncateForAudit(value: unknown): string {
   return `${s.slice(0, AUDIT_TOOL_PAYLOAD_MAX)}… (${s.length} chars total)`;
 }
 
-const DEFAULT_CHAT_MODEL = "gpt-4o";
 const DEFAULT_MCP_CWD = env.MCP_STDIO_DEFAULT_CWD;
 
 export type AgentInputItem = {
@@ -82,145 +71,6 @@ function buildSkillsMetadataSection(
   if (lines.length === 0) return "";
   return `\n\nAvailable skills (use when relevant):\n${lines.join("\n")}`;
 }
-
-/** Raw AI SDK model (no aisdk wrapper). */
-export function getHoomanModel(
-  config: AppConfig,
-  overrides?: { apiKey?: string; model?: string },
-) {
-  const modelId =
-    overrides?.model?.trim() || config.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
-  const provider = config.LLM_PROVIDER ?? "openai";
-
-  switch (provider) {
-    case "openai": {
-      const apiKey = overrides?.apiKey ?? config.OPENAI_API_KEY;
-      return createOpenAI({
-        apiKey: apiKey?.trim() || undefined,
-      })(modelId);
-    }
-    case "azure": {
-      const resourceName = (config.AZURE_RESOURCE_NAME ?? "").trim();
-      const apiKey = (overrides?.apiKey ?? config.AZURE_API_KEY ?? "").trim();
-      if (!resourceName || !apiKey) {
-        throw new Error(
-          "Azure provider requires AZURE_RESOURCE_NAME and AZURE_API_KEY. Set them in Settings.",
-        );
-      }
-      return createAzure({
-        resourceName,
-        apiKey,
-        apiVersion: (config.AZURE_API_VERSION ?? "").trim() || undefined,
-      })(modelId);
-    }
-    case "anthropic": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.ANTHROPIC_API_KEY ??
-        ""
-      ).trim();
-      if (!apiKey) {
-        throw new Error(
-          "Anthropic provider requires ANTHROPIC_API_KEY. Set it in Settings.",
-        );
-      }
-      return createAnthropic({ apiKey })(modelId);
-    }
-    case "amazon-bedrock": {
-      const region = (config.AWS_REGION ?? "").trim();
-      const accessKeyId = (config.AWS_ACCESS_KEY_ID ?? "").trim();
-      const secretAccessKey = (config.AWS_SECRET_ACCESS_KEY ?? "").trim();
-      if (!region || !accessKeyId || !secretAccessKey) {
-        throw new Error(
-          "Amazon Bedrock provider requires AWS_REGION, AWS_ACCESS_KEY_ID, and AWS_SECRET_ACCESS_KEY. Set them in Settings.",
-        );
-      }
-      return createAmazonBedrock({
-        region,
-        accessKeyId,
-        secretAccessKey,
-        sessionToken: (config.AWS_SESSION_TOKEN ?? "").trim() || undefined,
-      })(modelId);
-    }
-    case "google": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.GOOGLE_GENERATIVE_AI_API_KEY ??
-        ""
-      ).trim();
-      if (!apiKey) {
-        throw new Error(
-          "Google Generative AI provider requires GOOGLE_GENERATIVE_AI_API_KEY. Set it in Settings.",
-        );
-      }
-      return createGoogleGenerativeAI({ apiKey })(modelId);
-    }
-    case "google-vertex": {
-      const project = (config.GOOGLE_VERTEX_PROJECT ?? "").trim();
-      const location = (config.GOOGLE_VERTEX_LOCATION ?? "").trim();
-      const apiKey = (config.GOOGLE_VERTEX_API_KEY ?? "").trim();
-      if (!project || !location) {
-        throw new Error(
-          "Google Vertex provider requires GOOGLE_VERTEX_PROJECT and GOOGLE_VERTEX_LOCATION. Set them in Settings (or use GOOGLE_APPLICATION_CREDENTIALS for service account).",
-        );
-      }
-      return createVertex({
-        project,
-        location,
-        apiKey: apiKey || undefined,
-      })(modelId);
-    }
-    case "mistral": {
-      const apiKey = (overrides?.apiKey ?? config.MISTRAL_API_KEY ?? "").trim();
-      if (!apiKey) {
-        throw new Error(
-          "Mistral provider requires MISTRAL_API_KEY. Set it in Settings.",
-        );
-      }
-      return createMistral({ apiKey })(modelId);
-    }
-    case "deepseek": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.DEEPSEEK_API_KEY ??
-        ""
-      ).trim();
-      if (!apiKey) {
-        throw new Error(
-          "DeepSeek provider requires DEEPSEEK_API_KEY. Set it in Settings.",
-        );
-      }
-      return createDeepSeek({ apiKey })(modelId);
-    }
-    default:
-      throw new Error(`Unknown LLM provider: ${String(provider)}`);
-  }
-}
-
-const readSkillTool = tool({
-  description:
-    "Read the full instructions (SKILL.md) for an installed skill by its id. Use when you need to follow a skill's procedures. Pass the skill_id (e.g. pptx, pdf, docx) from the available skills list.",
-  inputSchema: jsonSchema({
-    type: "object",
-    properties: {
-      skill_id: {
-        type: "string",
-        description: "The skill id (directory name, e.g. pptx, pdf, docx)",
-      },
-    },
-    required: ["skill_id"],
-    additionalProperties: true,
-  }),
-  execute: async (input: unknown) => {
-    const skillId =
-      typeof (input as { skill_id?: string })?.skill_id === "string"
-        ? (input as { skill_id: string }).skill_id.trim()
-        : "";
-    if (!skillId) return "Error: skill_id is required.";
-    const content = await getSkillContent(skillId);
-    return content ?? "Skill not found.";
-  },
-});
 
 export interface RunChatOptions {
   channelContext?: string;
