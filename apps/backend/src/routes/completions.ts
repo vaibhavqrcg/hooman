@@ -43,8 +43,7 @@ function getLastUserMessage(messages: unknown[]): string | null {
       continue;
     const role = (m as { role: string }).role;
     if (role !== "user") continue;
-    last =
-      messageContentToText((m as { content: unknown }).content) || "(empty)";
+    last = messageContentToText((m as { content: unknown }).content) || " ";
   }
   return last || null;
 }

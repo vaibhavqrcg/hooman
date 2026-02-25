@@ -1,16 +1,10 @@
 import { join } from "path";
 import { MemoryLayer } from "@one710/recollect";
 import type { ModelMessage } from "ai";
-import type { ChatHistoryStore } from "../chats/chat-history.js";
+import type { ChatHistoryStore } from "./chat-history.js";
 import { getConfig } from "../config.js";
-import { getHoomanModel } from "./model-provider.js";
+import { getHoomanModel } from "../agents/model-provider.js";
 import { WORKSPACE_ROOT } from "../utils/workspace.js";
-
-/** @deprecated Use ModelMessage[] for full AI SDK format (tool calls, etc.). Kept for type compatibility. */
-export type ThreadMessage = {
-  role: "user" | "assistant" | "system";
-  content: string;
-};
 
 export interface ContextStore {
   /** Persist one user/assistant turn (plain text) to chat history and recollect. */
@@ -94,7 +88,7 @@ export function createContext(chatHistory: ChatHistoryStore): ContextStore {
           (msg.content == null ||
             (Array.isArray(msg.content) && msg.content.length === 0))
         ) {
-          return { ...msg, content: "(empty)" };
+          return { ...msg, content: " " };
         }
         return msg;
       });

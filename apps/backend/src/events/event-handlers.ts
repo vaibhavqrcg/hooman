@@ -4,7 +4,7 @@
  */
 import createDebug from "debug";
 import type { EventRouter } from "./event-router.js";
-import type { ContextStore } from "../agents/context.js";
+import type { ContextStore } from "../chats/context.js";
 import type { AuditLog } from "../audit/audit.js";
 import type {
   HoomanRunner,

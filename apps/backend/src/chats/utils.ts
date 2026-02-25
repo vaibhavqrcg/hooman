@@ -111,10 +111,10 @@ export function buildTurnMessagesFromResult(
         };
       });
       out.push({ role: "assistant", content: [], toolCalls } as ModelMessage);
-      // Store exactly one tool-result per tool-call, in order (toolCallId/toolName from call).
-      // So stored format matches Bedrock/AI SDK and we never have more results than calls.
+      // Store exactly one tool-result per tool-call (Bedrock requires no excess). Cap to toolCalls.length.
+      const cappedResults = results.slice(0, toolCalls.length);
       const content = toolCalls.map((call, j) => {
-        const r = results[j] as Record<string, unknown> | undefined;
+        const r = cappedResults[j] as Record<string, unknown> | undefined;
         const raw = r?.result ?? r?.output;
         return {
           type: "tool-result" as const,

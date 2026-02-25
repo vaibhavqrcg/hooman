@@ -13,7 +13,7 @@ import { buildAgentSystemPrompt } from "../utils/prompts.js";
 import {
   buildTurnMessagesFromResult,
   buildUserContentParts,
-} from "../utils/messages.js";
+} from "../chats/utils.js";
 import { truncateForMax } from "../utils/helpers.js";
 
 const debug = createDebug("hooman:hooman-runner");

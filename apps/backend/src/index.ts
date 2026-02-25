@@ -17,7 +17,7 @@ import { initChatHistory } from "./chats/chat-history.js";
 import { initAttachmentStore } from "./attachments/attachment-store.js";
 import { createChatService } from "./chats/chat-service.js";
 import { createAttachmentService } from "./attachments/attachment-service.js";
-import { createContext } from "./agents/context.js";
+import { createContext } from "./chats/context.js";
 import { initScheduleStore } from "./scheduling/schedule-store.js";
 import { createScheduleService } from "./scheduling/schedule-service.js";
 import { initMCPConnectionsStore } from "./capabilities/mcp/connections-store.js";
