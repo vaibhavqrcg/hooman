@@ -394,6 +394,7 @@ export async function createHoomanRunner(options?: {
     discoveredTools,
     async runChat(thread, newUserMessage, runOptions) {
       const input: ModelMessage[] = [];
+      input.push({ role: "system", content: fullSystem });
       if (runOptions?.channelContext?.trim()) {
         input.push({
           role: "user",
@@ -417,7 +418,6 @@ export async function createHoomanRunner(options?: {
       const maxSteps = runOptions?.maxTurns ?? getConfig().MAX_TURNS ?? 999;
       const agent = new ToolLoopAgent({
         model,
-        instructions: fullSystem,
         tools,
         stopWhen: stepCountIs(maxSteps),
         experimental_onToolCallStart({ toolCall }) {
