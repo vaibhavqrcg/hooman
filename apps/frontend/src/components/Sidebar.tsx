@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { clearToken } from "../auth";
 import { resetSocket } from "../socket";
+import { HealthBlip } from "./HealthBlip";
 import type { View } from "../types";
 
 interface SidebarProps {
@@ -52,8 +53,13 @@ export function Sidebar({ open = true, onClose }: SidebarProps) {
       `}
     >
       <div className="p-4 border-b border-hooman-border flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-white">Hooman</h1>
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold text-white leading-none">
+              Hooman
+            </h1>
+            <HealthBlip />
+          </div>
           <p className="text-xs text-hooman-muted mt-0.5">
             Your virtual identity
           </p>
