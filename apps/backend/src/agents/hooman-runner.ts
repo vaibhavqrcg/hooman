@@ -428,6 +428,33 @@ export async function createHoomanRunner(options?: {
         },
       });
 
+      const steps = result.steps ?? [];
+      const stepCount = steps.length;
+      const totalToolCalls = steps.reduce(
+        (n, s) => n + (Array.isArray(s.toolCalls) ? s.toolCalls.length : 0),
+        0,
+      );
+      const finishReason =
+        typeof result.finishReason === "string"
+          ? result.finishReason
+          : String(result.finishReason ?? "unknown");
+      debug(
+        "Run finished: steps=%d toolCalls=%d finishReason=%s",
+        stepCount,
+        totalToolCalls,
+        finishReason,
+      );
+      if (options?.auditLog) {
+        void options.auditLog.appendAuditEntry({
+          type: "run_summary",
+          payload: {
+            stepCount,
+            totalToolCalls,
+            finishReason,
+          },
+        });
+      }
+
       const text =
         result.text ?? (typeof result.finishReason === "string" ? "" : "");
       return {

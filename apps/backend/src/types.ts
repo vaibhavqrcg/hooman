@@ -278,7 +278,8 @@ export interface AuditLogEntry {
     | "scheduled_task"
     | "incoming_message"
     | "tool_call_start"
-    | "tool_call_end";
+    | "tool_call_end"
+    | "run_summary";
   payload: Record<string, unknown>;
 }
 
