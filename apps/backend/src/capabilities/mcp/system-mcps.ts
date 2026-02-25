@@ -67,6 +67,13 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
         "start_process,interact_with_process,read_process_output,force_terminate,list_sessions,list_processes,kill_process",
     },
     {
+      id: "_default_thinking",
+      type: "stdio",
+      name: "thinking",
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+    },
+    {
       id: "_default_memory",
       type: "stdio",
       name: "memory",
