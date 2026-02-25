@@ -42,3 +42,17 @@ export function mask(s: string): string {
 export function isMasked(s: unknown): boolean {
   return typeof s === "string" && (s.endsWith("…") || s.length < 10);
 }
+
+/**
+ * Serialize value to string and truncate to at most maxChars, appending "… (N chars total)" when truncated.
+ */
+export function truncateForMax(value: unknown, maxChars: number): string {
+  const s =
+    typeof value === "string"
+      ? value
+      : typeof value === "object" && value !== null
+        ? JSON.stringify(value)
+        : String(value);
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, maxChars)}… (${s.length} chars total)`;
+}

@@ -188,14 +188,11 @@ export class McpManager {
     try {
       const redis = getRedis();
       if (!redis) return;
-      const json = JSON.stringify(session.discoveredTools);
+      const json = JSON.stringify(session.tools);
       redis.set(DISCOVERED_TOOLS_KEY, json).catch((err) => {
         debug("Failed to publish discovered tools to Redis: %o", err);
       });
-      debug(
-        "Published %d discovered tools to Redis",
-        session.discoveredTools.length,
-      );
+      debug("Published %d discovered tools to Redis", session.tools.length);
     } catch (err) {
       debug("Failed to publish tools to Redis: %o", err);
     }
@@ -219,7 +216,7 @@ export class McpManager {
       closeMcp: async () => {
         /* no-op when using manager; do not tear down shared MCPs */
       },
-      discoveredTools: session.discoveredTools,
+      tools: session.tools,
     };
   }
 }

@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
-import { auth } from "@ai-sdk/mcp";
+import createDebug from "debug";
+import { auth, createMCPClient } from "@ai-sdk/mcp";
+import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
 import type { MCPConnectionsStore } from "./connections-store.js";
 import {
   createOAuthProvider,
@@ -12,6 +14,177 @@ import {
   type MCPConnectionStdio,
 } from "../../types.js";
 import { env } from "../../env.js";
+import { filterToolNames } from "../../utils/tool-filter.js";
+
+const debug = createDebug("hooman:mcp-service");
+const DEFAULT_MCP_CWD = env.MCP_STDIO_DEFAULT_CWD;
+
+export type McpClientEntry = {
+  client: Awaited<ReturnType<typeof createMCPClient>>;
+  id: string;
+};
+
+export interface CreateMcpClientsOptions {
+  mcpConnectionsStore?: MCPConnectionsStore;
+}
+
+/**
+ * Create MCP clients from a list of connections. Failed connections are skipped (logged at debug).
+ */
+export async function createMcpClients(
+  connections: MCPConnection[],
+  options?: CreateMcpClientsOptions,
+): Promise<McpClientEntry[]> {
+  const clients: McpClientEntry[] = [];
+  for (const c of connections) {
+    try {
+      if (c.type === "stdio") {
+        const stdio = c as MCPConnectionStdio;
+        const hasArgs = Array.isArray(stdio.args) && stdio.args.length > 0;
+        debug(
+          "Connecting to Stdio MCP: %s (command: %s, args: %j)",
+          c.id,
+          stdio.command,
+          stdio.args,
+        );
+        const transport = new Experimental_StdioMCPTransport({
+          command: stdio.command,
+          args: hasArgs ? stdio.args : [],
+          env: stdio.env,
+          cwd: stdio.cwd?.trim() || DEFAULT_MCP_CWD,
+        });
+        const client = await createMCPClient({ transport });
+        debug("Connected to %s", c.id);
+        clients.push({ client, id: c.id });
+      } else if (c.type === "streamable_http") {
+        const http = c as MCPConnectionStreamableHttp;
+        const hasOAuth =
+          http.oauth?.redirect_uri && options?.mcpConnectionsStore;
+        debug(
+          "Connecting to HTTP MCP: %s (url: %s, headers: %j)",
+          c.id,
+          http.url,
+          http.headers,
+        );
+        const client = await createMCPClient({
+          transport: {
+            type: "http",
+            url: http.url,
+            headers: http.headers,
+            ...(hasOAuth && {
+              authProvider: createOAuthProvider(
+                c.id,
+                options.mcpConnectionsStore!,
+                http,
+              ),
+            }),
+          },
+        });
+        debug("Connected to %s", c.id);
+        clients.push({ client, id: c.id });
+      } else if (c.type === "hosted") {
+        const hosted = c as MCPConnectionHosted;
+        const hasOAuth =
+          hosted.oauth?.redirect_uri && options?.mcpConnectionsStore;
+        debug(
+          "Connecting to Hosted MCP: %s (server_url: %s, headers: %j)",
+          c.id,
+          hosted.server_url,
+          hosted.headers,
+        );
+        const client = await createMCPClient({
+          transport: {
+            type: "http",
+            url: hosted.server_url,
+            headers: hosted.headers,
+            ...(hasOAuth && {
+              authProvider: createOAuthProvider(
+                c.id,
+                options.mcpConnectionsStore!,
+                hosted,
+              ),
+            }),
+          },
+        });
+        debug("Connected to %s", c.id);
+        clients.push({ client, id: c.id });
+      }
+    } catch (err) {
+      debug("MCP connection %s failed to connect: %o", c.id, err);
+    }
+  }
+  return clients;
+}
+
+/** Some APIs (e.g. AWS Bedrock) limit tool names to 64 chars. Prefix with short connection id and truncate if needed. */
+const DEFAULT_MAX_TOOL_NAME_LEN = 64;
+const DEFAULT_SHORT_CONN_ID_LEN = 8;
+
+export type McpDiscoveredTool = {
+  name: string;
+  description?: string;
+  connectionId: string;
+  connectionName: string;
+};
+
+export interface ClientsToToolsResult {
+  prefixedTools: Record<string, unknown>;
+  tools: McpDiscoveredTool[];
+}
+
+/**
+ * Build a tools map and discovered-tools list from MCP clients. Failed client.tools() are skipped (logged at debug).
+ */
+export async function clientsToTools(
+  clients: McpClientEntry[],
+  connections: MCPConnection[],
+  options?: {
+    maxToolNameLen?: number;
+    shortConnIdLen?: number;
+  },
+): Promise<ClientsToToolsResult> {
+  const maxToolNameLen = options?.maxToolNameLen ?? DEFAULT_MAX_TOOL_NAME_LEN;
+  const shortConnIdLen = options?.shortConnIdLen ?? DEFAULT_SHORT_CONN_ID_LEN;
+  const prefixedTools: Record<string, unknown> = {};
+  const tools: McpDiscoveredTool[] = [];
+
+  for (const { client, id } of clients) {
+    try {
+      const toolSet = await client.tools();
+      const toolNames = Object.keys(toolSet);
+      const conn = connections.find((c) => c.id === id);
+      const connName = (conn as { name?: string })?.name || conn?.id || id;
+      const filtered = filterToolNames(toolNames, conn?.tool_filter);
+      debug(
+        "MCP client %s tool discovery: %d tools found, %d after filter (%j)",
+        id,
+        toolNames.length,
+        filtered.length,
+        filtered,
+      );
+      const shortId = id.replace(/-/g, "").slice(0, shortConnIdLen);
+      const maxNameLen = maxToolNameLen - shortId.length - 1;
+      const allowed = new Set(filtered);
+      for (const [name, t] of Object.entries(toolSet)) {
+        if (!allowed.has(name)) continue;
+        const safeName =
+          name.length <= maxNameLen ? name : name.slice(0, maxNameLen);
+        const prefixed = `${shortId}_${safeName}`;
+        prefixedTools[prefixed] = t;
+        tools.push({
+          name,
+          description: (t as { description?: string }).description,
+          connectionId: id,
+          connectionName: connName,
+        });
+      }
+    } catch (err) {
+      debug("MCP client %s tools() failed: %o", id, err);
+    }
+  }
+
+  return { prefixedTools, tools };
+}
 
 export interface McpService {
   getAllConnections(): Promise<MCPConnection[]>;

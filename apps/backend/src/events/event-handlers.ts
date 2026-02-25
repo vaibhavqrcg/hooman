@@ -18,35 +18,6 @@ import { getConfig } from "../config.js";
 
 const debug = createDebug("hooman:event-handlers");
 
-/** Build a human-readable channel context string from channelMeta so the agent knows where the message came from and can reply using channel MCP tools. */
-function buildChannelContext(
-  meta: ChannelMeta | undefined,
-): string | undefined {
-  if (!meta) return undefined;
-  const lines: string[] = [`source_channel: ${meta.channel}`];
-  if (meta.channel === "whatsapp") {
-    lines.push(`chatId: ${meta.chatId}`);
-    lines.push(`messageId: ${meta.messageId}`);
-    lines.push(`destinationType: ${meta.destinationType}`);
-    if (meta.pushName) lines.push(`senderName: ${meta.pushName}`);
-    if (meta.selfMentioned) lines.push(`selfMentioned: true`);
-  } else if (meta.channel === "slack") {
-    lines.push(`channelId: ${meta.channelId}`);
-    lines.push(`messageTs: ${meta.messageTs}`);
-    if (meta.threadTs) lines.push(`threadTs: ${meta.threadTs}`);
-    lines.push(`destinationType: ${meta.destinationType}`);
-    lines.push(`senderId: ${meta.senderId}`);
-    if (meta.senderName) lines.push(`senderName: ${meta.senderName}`);
-    if (meta.yourSlackUserId)
-      lines.push(`yourSlackUserId: ${meta.yourSlackUserId}`);
-    if (meta.selfMentioned) lines.push(`selfMentioned: true`);
-  }
-  lines.push(`directness: ${meta.directness}`);
-  if (meta.directnessReason)
-    lines.push(`directnessReason: ${meta.directnessReason}`);
-  return lines.join("\n");
-}
-
 /** Default chat timeout when config CHAT_TIMEOUT_MS is 0 or unset. */
 const DEFAULT_CHAT_TIMEOUT_MS = 300_000;
 
@@ -152,11 +123,8 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
     try {
       const thread = await context.getThreadForAgent(userId);
       const session = await mcpManager.getSession();
-      const channelContext = buildChannelContext(
-        channelMeta as ChannelMeta | undefined,
-      );
       const runPromise = session.runChat(thread, text, {
-        channelContext,
+        channelMeta: channelMeta as ChannelMeta | undefined,
         attachments: attachmentContents,
         sessionId: userId,
       });
