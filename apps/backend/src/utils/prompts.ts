@@ -76,3 +76,23 @@ export function getFullStaticAgentInstructionsAppend(
   }
   return out;
 }
+
+export interface BuildAgentSystemPromptParams {
+  userInstructions: string;
+  staticAppend: string;
+  skillsSection: string;
+  sessionId?: string;
+}
+
+/**
+ * Build the full agent system prompt: user instructions + static append + skills section + optional session instructions.
+ */
+export function buildAgentSystemPrompt(
+  params: BuildAgentSystemPromptParams,
+): string {
+  const { userInstructions, staticAppend, skillsSection, sessionId } = params;
+  const sessionInstructions = sessionId
+    ? `\n\nYour current sessionId is: ${sessionId}. Use this for session-scoped memory tools.\n`
+    : "";
+  return userInstructions + staticAppend + skillsSection + sessionInstructions;
+}

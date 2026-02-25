@@ -11,24 +11,20 @@ import type { AppConfig } from "../config.js";
 export const DEFAULT_CHAT_MODEL = "gpt-5.2";
 
 /** Raw AI SDK model (no aisdk wrapper). */
-export function getHoomanModel(
-  config: AppConfig,
-  overrides?: { apiKey?: string; model?: string },
-) {
-  const modelId =
-    overrides?.model?.trim() || config.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
+export function getHoomanModel(config: AppConfig) {
+  const modelId = config.CHAT_MODEL?.trim() || DEFAULT_CHAT_MODEL;
   const provider = config.LLM_PROVIDER ?? "openai";
 
   switch (provider) {
     case "openai": {
-      const apiKey = overrides?.apiKey ?? config.OPENAI_API_KEY;
+      const apiKey = config.OPENAI_API_KEY;
       return createOpenAI({
         apiKey: apiKey?.trim() || undefined,
       })(modelId);
     }
     case "azure": {
       const resourceName = (config.AZURE_RESOURCE_NAME ?? "").trim();
-      const apiKey = (overrides?.apiKey ?? config.AZURE_API_KEY ?? "").trim();
+      const apiKey = (config.AZURE_API_KEY ?? "").trim();
       if (!resourceName || !apiKey) {
         throw new Error(
           "Azure provider requires AZURE_RESOURCE_NAME and AZURE_API_KEY. Set them in Settings.",
@@ -41,11 +37,7 @@ export function getHoomanModel(
       })(modelId);
     }
     case "anthropic": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.ANTHROPIC_API_KEY ??
-        ""
-      ).trim();
+      const apiKey = (config.ANTHROPIC_API_KEY ?? "").trim();
       if (!apiKey) {
         throw new Error(
           "Anthropic provider requires ANTHROPIC_API_KEY. Set it in Settings.",
@@ -70,11 +62,7 @@ export function getHoomanModel(
       })(modelId);
     }
     case "google": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.GOOGLE_GENERATIVE_AI_API_KEY ??
-        ""
-      ).trim();
+      const apiKey = (config.GOOGLE_GENERATIVE_AI_API_KEY ?? "").trim();
       if (!apiKey) {
         throw new Error(
           "Google Generative AI provider requires GOOGLE_GENERATIVE_AI_API_KEY. Set it in Settings.",
@@ -98,7 +86,7 @@ export function getHoomanModel(
       })(modelId);
     }
     case "mistral": {
-      const apiKey = (overrides?.apiKey ?? config.MISTRAL_API_KEY ?? "").trim();
+      const apiKey = (config.MISTRAL_API_KEY ?? "").trim();
       if (!apiKey) {
         throw new Error(
           "Mistral provider requires MISTRAL_API_KEY. Set it in Settings.",
@@ -107,11 +95,7 @@ export function getHoomanModel(
       return createMistral({ apiKey })(modelId);
     }
     case "deepseek": {
-      const apiKey = (
-        overrides?.apiKey ??
-        config.DEEPSEEK_API_KEY ??
-        ""
-      ).trim();
+      const apiKey = (config.DEEPSEEK_API_KEY ?? "").trim();
       if (!apiKey) {
         throw new Error(
           "DeepSeek provider requires DEEPSEEK_API_KEY. Set it in Settings.",

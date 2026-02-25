@@ -42,3 +42,43 @@ export function mask(s: string): string {
 export function isMasked(s: unknown): boolean {
   return typeof s === "string" && (s.endsWith("…") || s.length < 10);
 }
+
+/**
+ * Serialize value to string and truncate to at most maxChars, appending "… (N chars total)" when truncated.
+ */
+export function truncateForMax(value: unknown, maxChars: number): string {
+  const s =
+    typeof value === "string"
+      ? value
+      : typeof value === "object" && value !== null
+        ? JSON.stringify(value)
+        : String(value);
+  if (s.length <= maxChars) return s;
+  return `${s.slice(0, maxChars)}… (${s.length} chars total)`;
+}
+
+export async function runWithTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number | null,
+  timeoutError: Error,
+): Promise<T> {
+  if (timeoutMs === null) {
+    return fn();
+  }
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const task = fn();
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      timedOut = true;
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([task, timeoutPromise]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (timedOut) task.catch(() => undefined);
+  }
+}

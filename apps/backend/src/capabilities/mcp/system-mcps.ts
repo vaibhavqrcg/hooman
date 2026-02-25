@@ -3,6 +3,8 @@ import { BACKEND_ROOT, env } from "../../env.js";
 import { getChannelsConfig } from "../../config.js";
 import type { MCPConnection, MCPConnectionStdio } from "../../types.js";
 
+const DEFAULT_MCP_CWD = env.MCP_STDIO_DEFAULT_CWD;
+
 const MEMORY_MCP_SERVER_PATH = join(
   BACKEND_ROOT,
   "src",
@@ -27,6 +29,14 @@ const WHATSAPP_MCP_SERVER_PATH = join(
   "whatsapp-mcp-server.ts",
 );
 
+const SKILLS_MCP_SERVER_PATH = join(
+  BACKEND_ROOT,
+  "src",
+  "capabilities",
+  "mcp",
+  "skills-mcp-server.ts",
+);
+
 export function getDefaultMcpConnections(): MCPConnectionStdio[] {
   return [
     {
@@ -35,7 +45,7 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       name: "fetch",
       command: "uvx",
       args: ["mcp-server-fetch"],
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
     },
     {
       id: "_default_time",
@@ -43,18 +53,14 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       name: "time",
       command: "uvx",
       args: ["mcp-server-time"],
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
     },
     {
       id: "_default_filesystem",
       type: "stdio",
       name: "filesystem",
       command: "npx",
-      args: [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        env.MCP_STDIO_DEFAULT_CWD,
-      ],
+      args: ["-y", "@modelcontextprotocol/server-filesystem", DEFAULT_MCP_CWD],
     },
     {
       id: "_default_desktop_commander",
@@ -62,7 +68,7 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       name: "desktop_commander",
       command: "npx",
       args: ["-y", "@wonderwhy-er/desktop-commander@latest", "--no-onboarding"],
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
       tool_filter:
         "start_process,interact_with_process,read_process_output,force_terminate,list_sessions,list_processes,kill_process",
     },
@@ -79,8 +85,7 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       name: "memory",
       command: "npx",
       args: ["tsx", MEMORY_MCP_SERVER_PATH],
-      env: { CHROMA_URL: env.CHROMA_URL },
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
     },
     {
       id: "_default_schedule",
@@ -88,8 +93,15 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
       name: "schedule",
       command: "npx",
       args: ["tsx", SCHEDULE_MCP_SERVER_PATH],
-      env: { REDIS_URL: env.REDIS_URL ?? "" },
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
+    },
+    {
+      id: "_default_skills",
+      type: "stdio",
+      name: "skills",
+      command: "npx",
+      args: ["tsx", SKILLS_MCP_SERVER_PATH],
+      cwd: DEFAULT_MCP_CWD,
     },
   ];
 }
@@ -97,17 +109,17 @@ export function getDefaultMcpConnections(): MCPConnectionStdio[] {
 export function getChannelDefaultMcpConnections(): MCPConnectionStdio[] {
   const channels = getChannelsConfig();
   const out: MCPConnectionStdio[] = [];
-  if (channels.whatsapp?.enabled && env.REDIS_URL) {
+  if (channels.whatsapp?.enabled) {
     out.push({
       id: "_default_whatsapp",
       type: "stdio",
       name: "whatsapp",
       command: "npx",
       args: ["tsx", WHATSAPP_MCP_SERVER_PATH],
-      env: { REDIS_URL: env.REDIS_URL },
-      cwd: env.MCP_STDIO_DEFAULT_CWD,
+      cwd: DEFAULT_MCP_CWD,
     });
   }
+
   return out;
 }
 
