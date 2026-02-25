@@ -4,9 +4,9 @@
 
 # Hooman
 
-**One identity. Every channel.**
+**A friendlier, open-source platform for creating virtual identities.**
 
-Hooman is your virtual identity: one conversation that follows you. Talk from the web, Slack, or WhatsApp. Hooman remembers context, uses MCP and skills to get things done, and keeps you in control with an audit trail and approvals.
+Hooman is an open-source virtual identity creation platform. Build and run your own AI identity that can chat on the web, Slack, or WhatsApp; use MCP and skills to get things done; and stay under your control with an audit trail and approvals.
 
 </div>
 
@@ -20,10 +20,10 @@ Hooman is your virtual identity: one conversation that follows you. Talk from th
 
 ## Why Hooman
 
-You don’t juggle a dozen bots. You have **one conversation** with Hooman. Need a report drafted, a meeting summarized, or research done? Say it. Hooman uses MCP connections and skills directly. You get one place to chat, schedule tasks, and see what happened.
+Hooman gives you a **platform** to create and operate a virtual identity—not a locked-in service. You get one place to chat, schedule tasks, and see what happened. Need a report drafted, a meeting summarized, or research done? Your identity uses MCP connections and skills to do it.
 
 - **One front door** — Chat, schedule, and inspect everything through Hooman.
-- **MCP and skills** — Capabilities (MCP servers and skills) are attached to Hooman. Add connections and skills in the UI; Hooman uses them when relevant.
+- **MCP and skills** — Capabilities (MCP servers and skills) are attached to your identity. Add connections and skills in the UI; Hooman uses them when relevant.
 - **Multiple LLM providers** — In Settings, choose an LLM provider (OpenAI, Azure OpenAI, Anthropic, Amazon Bedrock, Google Generative AI, Google Vertex, Mistral, or DeepSeek) for chat. Choose a transcription provider (OpenAI, Azure, or Deepgram) for voice and audio (e.g. WhatsApp voice notes).
 - **Under your control** — Kill switch, capability approvals, and a full audit log so you see who did what and when.
 
@@ -31,7 +31,7 @@ You don’t juggle a dozen bots. You have **one conversation** with Hooman. Need
 
 ## First-party channels
 
-Talk to Hooman from the channels you already use. Each channel is a first-party adapter; configure them in **Settings → Channels**.
+Talk to your virtual identity from the channels you already use. Each channel is a first-party adapter; configure them in **Settings → Channels**.
 
 | Channel      | What you get                                                                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -45,13 +45,13 @@ One identity, one memory, one audit trail—whether you message from the web, Sl
 
 ## How it works
 
-| Concept          | What it is                                                                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hooman**       | A virtual identity. Reasons over memory, handles messages and scheduled tasks, and uses MCP tools and skills as needed.                         |
-| **Capabilities** | MCP servers (fetch, time, filesystem, sequential thinking, or your own) and skills. Attached to Hooman; configure in Capabilities and Settings. |
-| **Memory**       | Chat history (Prisma) so Hooman can use past context.                                                                                           |
+| Concept          | What it is                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Hooman**       | A virtual identity. Reasons over memory, handles messages and scheduled tasks, and uses MCP tools and skills as needed.                                |
+| **Capabilities** | MCP servers (fetch, time, filesystem, sequential thinking, or your own) and skills. Attached to your identity; configure in Capabilities and Settings. |
+| **Memory**       | Chat history (Prisma) so the identity can use past context.                                                                                            |
 
-You chat with Hooman; Hooman uses memory, MCP tools, and skills, and responds. Scheduled tasks run the same way—at a set time, Hooman processes the task like a message (reasoning, tools, audit).
+You chat with your identity; it uses memory, MCP tools, and skills, and responds. Scheduled tasks run the same way—at a set time, Hooman processes the task like a message (reasoning, tools, audit).
 
 ---
 
@@ -92,7 +92,7 @@ yarn start
 - **API** → http://localhost:3000
 - With `yarn dev`: **Web UI** → http://localhost:5173
 
-`yarn start` runs the API and workers only (no process on 5173). For the web UI locally, use `yarn dev` (which includes the frontend dev server) or serve the built `apps/frontend/dist` yourself. Set your **LLM provider** and API key (or credentials) in **Settings**, then chat with Hooman. Configure MCP connections and skills in **Capabilities**. Supported providers: OpenAI, Azure, Anthropic, Amazon Bedrock, Google, Google Vertex, Mistral, DeepSeek.
+`yarn start` runs the API and workers only (no process on 5173). For the web UI locally, use `yarn dev` (which includes the frontend dev server) or serve the built `apps/frontend/dist` yourself. Set your **LLM provider** and API key (or credentials) in **Settings**, then chat with your identity. Configure MCP connections and skills in **Capabilities**. Supported providers: OpenAI, Azure, Anthropic, Amazon Bedrock, Google, Google Vertex, Mistral, DeepSeek.
 
 To stop: `yarn stop` (or `npx pm2 stop ecosystem.config.cjs`).
 
@@ -309,4 +309,4 @@ After code or config changes in production, run `yarn build` then `yarn restart`
 
 ## License
 
-[GNU General Public License v3.0](LICENSE).
+[Apache License 2.0](LICENSE).
