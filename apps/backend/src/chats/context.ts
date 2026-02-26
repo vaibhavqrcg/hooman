@@ -82,14 +82,16 @@ export function createContext(chatHistory: ChatHistoryStore): ContextStore {
         if (msg.role === "system") {
           return { ...msg, role: "user" as const };
         }
+
         // Bedrock rejects assistant messages with empty content (e.g. tool-call-only).
         if (
           msg.role === "assistant" &&
           (msg.content == null ||
             (Array.isArray(msg.content) && msg.content.length === 0))
         ) {
-          return { ...msg, content: " " };
+          return { ...msg, content: "(empty)" };
         }
+
         return msg;
       });
     },
