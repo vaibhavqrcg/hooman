@@ -162,6 +162,12 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         eventId: event.id,
         userInput: text,
       });
+      await context.addTurnToChatHistory(
+        userId,
+        text,
+        assistantText,
+        attachments,
+      );
       // Notify frontend/channels immediately so the user sees the reply without waiting for persistence
       debug(
         "Dispatching response eventId=%s len=%d",
@@ -175,15 +181,12 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         assistantText,
       );
       if (messages?.length) {
-        await context.addTurnMessages(userId, messages);
-        await context.addTurnToChatHistory(
-          userId,
-          text,
-          assistantText,
-          attachments,
-        );
+        await context.addTurnToAgentThread(userId, messages);
       } else {
-        await context.addTurn(userId, text, assistantText, attachments);
+        await context.addTurnToAgentThread(userId, [
+          { role: "user", content: text },
+          { role: "assistant", content: assistantText },
+        ] as ModelMessage[]);
       }
     } catch (err) {
       if (err instanceof ChatTimeoutError) {
@@ -198,7 +201,12 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         debug("Chat handler error eventId=%s: %o", event.id, err);
       }
 
-      await context.addTurn(userId, text, assistantText, attachments);
+      await context.addTurnToChatHistory(
+        userId,
+        text,
+        assistantText,
+        attachments,
+      );
       debug("Dispatching error response eventId=%s", event.id);
       await dispatchResponseToChannel(
         event.id,
@@ -206,6 +214,10 @@ export function registerEventHandlers(deps: EventHandlerDeps): void {
         channelMeta as ChannelMeta | undefined,
         assistantText,
       );
+      await context.addTurnToAgentThread(userId, [
+        { role: "user", content: text },
+        { role: "assistant", content: assistantText },
+      ] as ModelMessage[]);
     }
   });
 

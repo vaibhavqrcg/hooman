@@ -7,15 +7,6 @@ import { getHoomanModel } from "../agents/model-provider.js";
 import { WORKSPACE_ROOT } from "../utils/workspace.js";
 
 export interface ContextStore {
-  /** Persist one user/assistant turn (plain text) to chat history and recollect. */
-  addTurn(
-    userId: string,
-    userText: string,
-    assistantText: string,
-    userAttachments?: string[],
-  ): Promise<void>;
-  /** Persist a full turn as AI SDK messages (includes tool calls, tool results, etc.). Use when available. Call addTurnToChatHistory too so the UI has the turn. */
-  addTurnMessages(userId: string, messages: ModelMessage[]): Promise<void>;
   /** Persist one user/assistant turn to chat history only (for UI). Use with addTurnMessages when storing full AI SDK messages in memory. */
   addTurnToChatHistory(
     userId: string,
@@ -23,6 +14,8 @@ export interface ContextStore {
     assistantText: string,
     userAttachments?: string[],
   ): Promise<void>;
+  /** Persist a full turn as AI SDK messages (includes tool calls, tool results, etc.). Use when available. Call addTurnToChatHistory too so the UI has the turn. */
+  addTurnToAgentThread(userId: string, messages: ModelMessage[]): Promise<void>;
   /** Token-limited thread for the agent (from recollect; full AI SDK messages when stored with addTurnMessages). */
   getThreadForAgent(userId: string): Promise<ModelMessage[]>;
   /** Clear all messages for the user (chat history and recollect). */
@@ -31,7 +24,7 @@ export interface ContextStore {
 
 function createMemoryLayer(): MemoryLayer {
   const config = getConfig();
-  const maxTokens = config.MAX_INPUT_TOKENS ?? 100_000;
+  const maxTokens = config.MAX_INPUT_TOKENS || 100_000;
   const summarizationModel = getHoomanModel(config);
   return new MemoryLayer({
     maxTokens,
@@ -45,27 +38,6 @@ export function createContext(chatHistory: ChatHistoryStore): ContextStore {
   const memory = createMemoryLayer();
 
   return {
-    async addTurn(
-      userId: string,
-      userText: string,
-      assistantText: string,
-      userAttachments?: string[],
-    ): Promise<void> {
-      await chatHistory.addMessage(userId, "user", userText, userAttachments);
-      await chatHistory.addMessage(userId, "assistant", assistantText);
-      await memory.addMessage(userId, "user", userText);
-      await memory.addMessage(userId, "assistant", assistantText);
-    },
-
-    async addTurnMessages(
-      userId: string,
-      messages: ModelMessage[],
-    ): Promise<void> {
-      for (const msg of messages) {
-        await memory.addMessage(userId, null, msg);
-      }
-    },
-
     async addTurnToChatHistory(
       userId: string,
       userText: string,
@@ -74,6 +46,15 @@ export function createContext(chatHistory: ChatHistoryStore): ContextStore {
     ): Promise<void> {
       await chatHistory.addMessage(userId, "user", userText, userAttachments);
       await chatHistory.addMessage(userId, "assistant", assistantText);
+    },
+
+    async addTurnToAgentThread(
+      userId: string,
+      messages: ModelMessage[],
+    ): Promise<void> {
+      for (const msg of messages) {
+        await memory.addMessage(userId, null, msg);
+      }
     },
 
     async getThreadForAgent(userId: string): Promise<ModelMessage[]> {

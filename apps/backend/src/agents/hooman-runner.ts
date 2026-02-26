@@ -62,7 +62,7 @@ export interface RunChatOptions {
 
 export interface RunChatResult {
   output: string;
-  /** Full AI SDK messages for this turn (user + assistant with tool calls/results). Store via context.addTurnMessages for recollect. */
+  /** Full AI SDK messages for this turn (user + assistant with tool calls/results). Store via context.addTurnToAgentThread for recollect. */
   messages?: ModelMessage[];
 }
 
@@ -119,7 +119,7 @@ export async function createHoomanRunner(options: {
         : { role: "user", content: userContent };
       input.push(prompt);
 
-      const maxSteps = getConfig().MAX_TURNS ?? 999;
+      const maxSteps = getConfig().MAX_TURNS || 999;
       const agent = new ToolLoopAgent({
         model,
         instructions: fullSystem,
