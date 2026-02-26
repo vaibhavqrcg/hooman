@@ -2,9 +2,9 @@ import type { Express, Request, Response } from "express";
 import createDebug from "debug";
 import type { AppContext } from "../utils/helpers.js";
 import { getParam } from "../utils/helpers.js";
-import { getRedis } from "../data/redis.js";
-import { DISCOVERED_TOOLS_KEY } from "../capabilities/mcp/manager.js";
-import { requestResponse } from "../utils/pubsub.js";
+import { publish } from "../utils/pubsub.js";
+
+const MCP_RELOAD_REQUEST_CHANNEL = "hooman:mcp-reload:request";
 const debug = createDebug("hooman:routes:capabilities");
 
 function escapeHtml(s: string): string {
@@ -16,19 +16,13 @@ function escapeHtml(s: string): string {
 }
 
 export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
-  const { mcpService } = ctx;
+  const { mcpService, discoveredToolsStore } = ctx;
 
   app.get(
     "/api/capabilities/mcp/tools",
     async (_req: Request, res: Response) => {
       try {
-        const redis = getRedis();
-        if (!redis) {
-          res.json({ tools: [] });
-          return;
-        }
-        const raw = await redis.get(DISCOVERED_TOOLS_KEY);
-        const tools = raw ? JSON.parse(raw) : [];
+        const tools = await discoveredToolsStore.getAll();
         res.json({ tools });
       } catch (err) {
         debug("list tools error: %o", err);
@@ -41,17 +35,15 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
     "/api/capabilities/mcp/reload",
     async (_req: Request, res: Response) => {
       try {
-        await requestResponse(
-          "hooman:mcp-reload:request",
-          "hooman:mcp-reload:response",
-          "reload",
-          {},
-          60_000,
+        publish(
+          MCP_RELOAD_REQUEST_CHANNEL,
+          JSON.stringify({
+            requestId: `reload-${Date.now()}`,
+            method: "reload",
+            params: {},
+          }),
         );
-        const redis = getRedis();
-        const raw = redis ? await redis.get(DISCOVERED_TOOLS_KEY) : null;
-        const tools = raw ? JSON.parse(raw) : [];
-        res.json({ tools });
+        res.status(202).json({ status: "reloading" });
       } catch (err) {
         debug("mcp reload error: %o", err);
         res.status(500).json({ error: (err as Error).message });
@@ -217,7 +209,7 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
 
   app.get("/api/skills/list", async (_req: Request, res: Response) => {
     try {
-      const skills = await ctx.skillService.list();
+      const skills = await ctx.skillService.listWithEnabled();
       res.json({ skills });
     } catch (err) {
       debug("skills list error: %o", err);
@@ -227,6 +219,35 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
       });
     }
   });
+
+  app.patch(
+    "/api/skills/:id/enabled",
+    async (req: Request, res: Response): Promise<void> => {
+      const id =
+        typeof req.params.id === "string"
+          ? req.params.id.trim()
+          : (req.params.id?.[0] ?? "").trim();
+      if (!id) {
+        res.status(400).json({ error: "Missing skill id." });
+        return;
+      }
+      const enabled =
+        typeof req.body?.enabled === "boolean" ? req.body.enabled : undefined;
+      if (enabled === undefined) {
+        res
+          .status(400)
+          .json({ error: "Missing or invalid 'enabled' boolean." });
+        return;
+      }
+      try {
+        await ctx.skillSettingsStore.setEnabled(id, enabled);
+        res.status(204).send();
+      } catch (err) {
+        debug("skill setEnabled error: %o", err);
+        res.status(500).json({ error: (err as Error).message });
+      }
+    },
+  );
 
   app.get("/api/skills/:id/content", async (req: Request, res: Response) => {
     const id =

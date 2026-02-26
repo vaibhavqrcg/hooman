@@ -131,6 +131,30 @@ export function getAttachmentUrl(id: string): string {
   return `${BASE}/api/chat/attachments/${encodeURIComponent(id)}`;
 }
 
+/** Get signed URLs for attachments (usable in <img> and links; no auth needed when opening in new tab). */
+export async function getAttachmentSignedUrls(
+  ids: string[],
+): Promise<{ id: string; url: string }[]> {
+  if (ids.length === 0) return [];
+  const res = await authFetch(`${BASE}/api/chat/attachments/sign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ attachmentIds: ids }),
+  });
+  const text = await res.text();
+  if (!res.ok) return [];
+  try {
+    const data = JSON.parse(text) as { urls?: { id: string; url: string }[] };
+    const list = Array.isArray(data.urls) ? data.urls : [];
+    return list.map(({ id, url }) => ({
+      id,
+      url: url.startsWith("/") ? `${BASE}${url}` : url,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** WebSocket URL for Deepgram live transcription proxy (voice input when provider is deepgram). */
 export function getRealtimeWsUrl(token: string | null): string {
   const base = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
@@ -306,14 +330,12 @@ export async function getDiscoveredTools(): Promise<{
   return res.json();
 }
 
-export async function reloadMcpTools(): Promise<{
-  tools: DiscoveredTool[];
-}> {
+/** Triggers MCP reload (fire-and-forget). Server returns 202; wait for Socket.IO "mcp-tools-reloaded" then call getDiscoveredTools(). */
+export async function reloadMcpTools(): Promise<void> {
   const res = await authFetch(`${BASE}/api/capabilities/mcp/reload`, {
     method: "POST",
   });
-  if (!res.ok) return { tools: [] };
-  return res.json();
+  if (!res.ok) throw new Error(await res.text());
 }
 
 export type LLMProviderId =
@@ -524,6 +546,8 @@ export interface SkillEntry {
   id: string;
   name: string;
   description?: string;
+  /** When false, skill is not used for the agent. Default true. */
+  enabled?: boolean;
 }
 
 export interface SkillsListApiResponse {
@@ -535,6 +559,21 @@ export async function getSkillsList(): Promise<SkillsListApiResponse> {
   const res = await authFetch(`${BASE}/api/skills/list`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+export async function updateSkillEnabled(
+  skillId: string,
+  enabled: boolean,
+): Promise<void> {
+  const res = await authFetch(
+    `${BASE}/api/skills/${encodeURIComponent(skillId)}/enabled`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    },
+  );
+  if (!res.ok) throw new Error(await res.text());
 }
 
 export async function getSkillContent(skillId: string): Promise<{
