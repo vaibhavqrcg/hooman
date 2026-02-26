@@ -2,7 +2,7 @@
  * Hooman agent run via Vercel AI SDK (ToolLoopAgent + tools). No personas; MCP and skills attached to main flow.
  */
 import { getHoomanModel } from "./model-provider.js";
-import { ToolLoopAgent, stepCountIs } from "ai";
+import { ToolLoopAgent, ToolSet, stepCountIs } from "ai";
 import type { ModelMessage } from "ai";
 import createDebug from "debug";
 import { createSkillService } from "../capabilities/skills/skills-service.js";
@@ -10,10 +10,7 @@ import type { AuditLogEntry, ChannelMeta } from "../types.js";
 import { getConfig, getFullStaticAgentInstructionsAppend } from "../config.js";
 import { buildChannelContext } from "../channels/shared.js";
 import { buildAgentSystemPrompt } from "../utils/prompts.js";
-import {
-  buildTurnMessagesFromResult,
-  buildUserContentParts,
-} from "../chats/utils.js";
+import { buildUserContentParts } from "../chats/utils.js";
 import { truncateForMax } from "../utils/helpers.js";
 
 const debug = createDebug("hooman:hooman-runner");
@@ -93,9 +90,7 @@ export async function createHoomanRunner(options: {
       const agent = new ToolLoopAgent({
         model,
         instructions: fullSystem,
-        tools: agentTools as ConstructorParameters<
-          typeof ToolLoopAgent
-        >[0]["tools"],
+        tools: agentTools as ToolSet,
         stopWhen: stepCountIs(maxSteps),
         experimental_onToolCallStart({ toolCall }) {
           const name =
@@ -171,12 +166,10 @@ export async function createHoomanRunner(options: {
       });
 
       const response = await agent.generate({ messages: input });
-      const messages = buildTurnMessagesFromResult(prompt, response);
-      const text =
-        response.text ?? (typeof response.finishReason === "string" ? "" : "");
+      const messages: ModelMessage[] = [prompt, ...response.response.messages];
 
       return {
-        output: text,
+        output: response.text ?? "",
         messages,
       };
     },
