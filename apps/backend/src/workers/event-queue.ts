@@ -10,7 +10,7 @@ import { createEventQueue } from "../events/event-queue.js";
 import { EventRouter } from "../events/event-router.js";
 import { registerEventHandlers } from "../events/event-handlers.js";
 import { AuditLog } from "../audit/audit.js";
-import { createContext } from "../agents/context.js";
+import { createContext } from "../chats/context.js";
 import { initMCPConnectionsStore } from "../capabilities/mcp/connections-store.js";
 import { initDb } from "../data/db.js";
 import { initChatHistory } from "../chats/chat-history.js";

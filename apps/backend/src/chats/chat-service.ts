@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import type { ChatHistoryStore, GetMessagesResult } from "./chat-history.js";
 import type { AttachmentService } from "../attachments/attachment-service.js";
 import type { RawDispatchInput } from "../types.js";
-import type { ContextStore } from "../agents/context.js";
+import type { ContextStore } from "./context.js";
 
 export interface ChatService {
   getHistory(
