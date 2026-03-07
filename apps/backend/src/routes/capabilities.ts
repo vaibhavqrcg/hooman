@@ -351,6 +351,22 @@ export function registerCapabilityRoutes(app: Express, ctx: AppContext): void {
     }
   });
 
+  app.post("/api/skills/upload", async (req: Request, res: Response) => {
+    const body = req.body as { content?: string };
+    const content = typeof body?.content === "string" ? body.content : "";
+    if (!content) {
+      res.status(400).json({ error: "Missing or invalid 'content'." });
+      return;
+    }
+    try {
+      const result = await ctx.skillService.upload(content);
+      res.status(201).json({ path: result.path, id: result.id });
+    } catch (err) {
+      debug("skills upload error: %o", err);
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
   app.post("/api/skills/remove", async (req: Request, res: Response) => {
     const body = req.body as { skills?: string[] };
     const skills = Array.isArray(body?.skills) ? body.skills : [];

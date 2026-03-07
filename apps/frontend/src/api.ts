@@ -756,3 +756,16 @@ export async function removeSkillsPackage(
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
+
+/** Valid slug: lowercase letters, numbers, and hyphens only. */
+export async function uploadSkill(options: {
+  content: string;
+}): Promise<{ path: string; id: string }> {
+  const res = await authFetch(`${BASE}/api/skills/upload`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
