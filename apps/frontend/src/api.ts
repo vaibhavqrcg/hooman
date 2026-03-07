@@ -510,8 +510,6 @@ export interface AppConfig {
 export interface SystemMcpEntry {
   id: string;
   name: string;
-  command: string;
-  args?: string[];
   enabled: boolean;
 }
 

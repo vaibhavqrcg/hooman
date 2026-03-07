@@ -1012,16 +1012,13 @@ export const McpConnections = forwardRef<
             {systemConnections.map((s) => (
               <li
                 key={s.id}
-                className="rounded-xl border border-hooman-border/80 bg-hooman-surface/60 p-4 flex items-start justify-between"
+                className="rounded-xl border border-hooman-border/80 bg-hooman-surface/60 p-4 flex items-center justify-between"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex items-center gap-2">
                   <span className="inline-block rounded px-2 py-0.5 text-xs font-medium bg-hooman-muted/30 text-hooman-muted mr-2">
                     System
                   </span>
                   <span className="font-medium text-white">{s.name}</span>
-                  <p className="text-xs text-hooman-muted truncate mt-0.5">
-                    {s.command} {s.args?.join(" ")}
-                  </p>
                 </div>
                 <div className="shrink-0">
                   <Button

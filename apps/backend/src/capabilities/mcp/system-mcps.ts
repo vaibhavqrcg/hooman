@@ -104,12 +104,10 @@ const ALL_SYSTEM_MCP_CONNECTIONS: MCPConnectionStdio[] = [
   },
 ];
 
-/** Entry for UI: system MCP with id, name, command, args, enabled. */
+/** Entry for UI: system MCP with id, name, enabled. Command/args omitted for system MCPs. */
 export interface SystemMcpEntry {
   id: string;
   name: string;
-  command: string;
-  args?: string[];
   enabled: boolean;
 }
 
@@ -123,14 +121,12 @@ function getEnabledSystemMcpNames(): Set<string> {
   return new Set(names);
 }
 
-/** All system MCP entries with enabled state for the MCP tab. */
+/** All system MCP entries with enabled state for the MCP tab. Command/args not exposed to UI. */
 export function getSystemMcpEntriesWithEnabled(): SystemMcpEntry[] {
   const enabled = getEnabledSystemMcpNames();
   return ALL_SYSTEM_MCP_CONNECTIONS.map((c) => ({
     id: c.id,
     name: c.name,
-    command: c.command,
-    args: c.args,
     enabled: enabled.has(c.name.toLowerCase()),
   }));
 }
