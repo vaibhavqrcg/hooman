@@ -308,6 +308,15 @@ export async function patchChannels(patch: {
   return res.json();
 }
 
+/** Log out WhatsApp session so user can link a different device. */
+export async function logoutWhatsApp(): Promise<{ ok: boolean }> {
+  const res = await authFetch(`${BASE}/api/channels/whatsapp/logout`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(apiError(res, await res.text()));
+  return res.json();
+}
+
 /** WhatsApp connection status (for showing QR in Settings when linking device). */
 export async function getWhatsAppConnection(): Promise<{
   status: "disconnected" | "pairing" | "connected";

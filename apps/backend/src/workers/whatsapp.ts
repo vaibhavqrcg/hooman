@@ -5,10 +5,11 @@
  * Run as a separate PM2 process (e.g. pm2 start ecosystem.config.cjs --only whatsapp).
  */
 import createDebug from "debug";
-import { getChannelsConfig } from "../config.js";
+import { getChannelsConfig, updateChannelsConfig } from "../config.js";
 import {
   startWhatsAppAdapter,
   stopWhatsAppAdapter,
+  logoutWhatsApp,
   handleWhatsAppMcpRequest,
   sendMessageToChat,
   type WhatsAppConnection,
@@ -33,6 +34,16 @@ let mcpSubscriber: ReturnType<typeof createSubscriber> | null = null;
 /** Connection state for WhatsApp (QR, status, self identity). API reads this via Redis RPC. */
 let connectionState: WhatsAppConnection = { status: "disconnected" };
 
+/** Set channels.whatsapp.enabled to false when disconnect/logout is observed (user unlink, etc.). */
+function disableWhatsAppChannel(): void {
+  const current = getChannelsConfig();
+  if (!current.whatsapp?.enabled) return;
+  updateChannelsConfig({
+    whatsapp: { ...current.whatsapp, enabled: false },
+  });
+  debug("WhatsApp channel disabled (disconnect/logout observed)");
+}
+
 async function startAdapter(): Promise<void> {
   await stopWhatsAppAdapter();
   if (!env.REDIS_URL) {
@@ -54,7 +65,9 @@ async function startAdapter(): Promise<void> {
           : status === "pairing" && qr
             ? { status: "pairing", qr }
             : { status: "disconnected" };
-      if (status === "pairing" && qr) {
+      if (status === "disconnected") {
+        disableWhatsAppChannel();
+      } else if (status === "pairing" && qr) {
         debug("QR ready for Settings UI (via RPC)");
       } else if (status === "connected") {
         debug(
@@ -83,10 +96,16 @@ function setupMcpSubscriber(): void {
     createRpcMessageHandler(
       CONNECTION_RESPONSE_CHANNEL,
       async (method: string) => {
-        if (method !== "get_connection_status") {
-          throw new Error(`Unknown method: ${method}`);
+        if (method === "get_connection_status") return connectionState;
+        if (method === "logout") {
+          await logoutWhatsApp();
+          connectionState = { status: "disconnected" };
+          disableWhatsAppChannel();
+          debug("Logged out per RPC request; restarting adapter for QR");
+          await startAdapter();
+          return { ok: true };
         }
-        return connectionState;
+        throw new Error(`Unknown method: ${method}`);
       },
     ),
   );

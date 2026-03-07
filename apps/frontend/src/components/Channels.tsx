@@ -1,8 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import createDebug from "debug";
-import { SlidersHorizontal, FileJson } from "lucide-react";
+import {
+  SlidersHorizontal,
+  FileJson,
+  CheckCircle2,
+  Smartphone,
+  Loader2,
+  LogOut,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { getChannels, patchChannels, getWhatsAppConnection } from "../api";
+import {
+  getChannels,
+  patchChannels,
+  getWhatsAppConnection,
+  logoutWhatsApp,
+} from "../api";
 
 const debug = createDebug("hooman:Channels");
 
@@ -379,6 +391,7 @@ function ConfigModal({
         <WhatsAppConnectionBlock
           connection={whatsAppConn}
           enabled={!!channel.enabled}
+          onLogout={fetchWhatsAppConnection}
         />
       )}
       {channel.id === "slack" && (
@@ -404,47 +417,100 @@ function ConfigModal({
 function WhatsAppConnectionBlock({
   connection,
   enabled,
+  onLogout,
 }: {
   connection: WhatsAppConnection | null;
   enabled: boolean;
+  onLogout?: () => void;
 }) {
+  const [loggingOut, setLoggingOut] = useState(false);
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logoutWhatsApp();
+      onLogout?.();
+    } catch {
+      setLoggingOut(false);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
   if (!enabled) {
     return (
-      <div className="mb-4 p-4 rounded-lg bg-hooman-muted/10 border border-hooman-border">
-        <p className="text-sm text-hooman-muted">
-          Enable the channel and save to start linking your WhatsApp device.
-        </p>
+      <div className="mb-6 rounded-xl border border-hooman-border bg-hooman-surface p-4">
+        <div className="flex items-center gap-2 text-sm text-hooman-muted">
+          <Smartphone className="h-4 w-4 shrink-0" />
+          <p>
+            Enable the channel and save to start linking your WhatsApp device.
+          </p>
+        </div>
       </div>
     );
   }
+
   const status = connection?.status ?? "disconnected";
   return (
-    <div className="mb-4 p-4 rounded-lg bg-hooman-muted/10 border border-hooman-border">
-      <p className="text-sm font-medium text-white mb-2">Link device</p>
-      {status === "connected" && (
-        <p className="text-sm text-green-500">
-          Linked
-          {connection?.selfNumber || connection?.selfId
-            ? ` — Connected as ${connection.selfNumber ?? connection.selfId}`
-            : " — WhatsApp is connected."}
-        </p>
-      )}
-      {status === "pairing" && connection?.qr && (
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-sm text-hooman-muted">
-            Scan this QR code with WhatsApp on your phone (Linked Devices).
-          </p>
-          <div className="p-3 bg-white rounded-lg inline-block">
-            <QRCodeSVG value={connection.qr} size={256} level="M" />
+    <div className="mb-6 rounded-xl border border-hooman-border bg-hooman-surface overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-hooman-border/50 px-4 py-3">
+        <h4 className="text-sm font-medium text-white">Link device</h4>
+        {status === "connected" && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-hooman-green/40 bg-hooman-green/10 px-2 py-0.5 text-xs font-medium text-hooman-green">
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            Linked
+          </span>
+        )}
+        {status === "pairing" && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400">
+            <Smartphone className="h-3.5 w-3.5" />
+            Scan QR
+          </span>
+        )}
+        {(status === "disconnected" || (!connection && enabled)) && (
+          <span className="inline-flex items-center gap-1.5 rounded-md border border-hooman-border bg-hooman-border/20 px-2 py-0.5 text-xs font-medium text-hooman-muted">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Connecting
+          </span>
+        )}
+      </div>
+      <div className="p-4">
+        {status === "connected" && (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-zinc-300">
+              {connection?.selfNumber || connection?.selfId ? (
+                <>Connected as {connection.selfNumber ?? connection.selfId}</>
+              ) : (
+                <>WhatsApp is linked and receiving messages.</>
+              )}
+            </p>
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<LogOut className="h-4 w-4" />}
+              onClick={handleLogout}
+              disabled={loggingOut}
+            >
+              {loggingOut ? "Disconnecting…" : "Disconnect"}
+            </Button>
           </div>
-        </div>
-      )}
-      {(status === "disconnected" || (!connection && enabled)) && (
-        <p className="text-sm text-hooman-muted">
-          Connecting… Make sure the channel is enabled and the worker is
-          running.
-        </p>
-      )}
+        )}
+        {status === "pairing" && connection?.qr && (
+          <div className="flex flex-col items-center gap-4">
+            <p className="text-center text-sm text-hooman-muted">
+              Open WhatsApp on your phone → Linked devices → Link a device, then
+              scan this code.
+            </p>
+            <div className="rounded-xl border border-hooman-border bg-white p-4 shadow-sm">
+              <QRCodeSVG value={connection.qr} size={240} level="M" />
+            </div>
+          </div>
+        )}
+        {(status === "disconnected" || (!connection && enabled)) && (
+          <p className="text-sm text-hooman-muted">
+            Starting connection… Ensure the WhatsApp worker is running.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

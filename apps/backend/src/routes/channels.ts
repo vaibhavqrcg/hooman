@@ -28,4 +28,16 @@ export function registerChannelRoutes(app: Express, ctx: AppContext): void {
       res.json(result);
     },
   );
+
+  app.post(
+    "/api/channels/whatsapp/logout",
+    async (_req: Request, res: Response) => {
+      try {
+        await channelService.logoutWhatsApp();
+        res.json({ ok: true });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    },
+  );
 }

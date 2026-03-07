@@ -335,6 +335,21 @@ export async function stopWhatsAppAdapter(): Promise<void> {
   }
 }
 
+/** Log out and destroy session so next start shows QR again. */
+export async function logoutWhatsApp(): Promise<void> {
+  if (client) {
+    try {
+      const c = client as { logout?: () => Promise<void> };
+      if (typeof c.logout === "function") await c.logout();
+    } catch (e) {
+      debug("logout error (continuing with destroy): %o", e);
+    }
+    await client.destroy();
+    client = null;
+    debug("WhatsApp logged out; session cleared");
+  }
+}
+
 /**
  * Send a text message to a WhatsApp chat. Used by response delivery (event-queue publishes; whatsapp worker subscribes).
  */

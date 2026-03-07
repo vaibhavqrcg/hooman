@@ -18,6 +18,7 @@ export interface ChannelService {
   getWhatsAppConnection(): Promise<
     WhatsAppConnection | { status: "disconnected" }
   >;
+  logoutWhatsApp(): Promise<void>;
 }
 
 export function createChannelService(): ChannelService {
@@ -121,6 +122,19 @@ export function createChannelService(): ChannelService {
       } catch {
         return { status: "disconnected" };
       }
+    },
+
+    async logoutWhatsApp() {
+      if (!getRedis()) {
+        throw new Error("Redis not initialized");
+      }
+      await requestResponse(
+        WHATSAPP_CONNECTION_REQUEST_CHANNEL,
+        WHATSAPP_CONNECTION_RESPONSE_CHANNEL,
+        "logout",
+        {},
+        WHATSAPP_CONNECTION_RPC_TIMEOUT_MS,
+      );
     },
   };
 }
