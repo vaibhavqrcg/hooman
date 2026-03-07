@@ -18,14 +18,16 @@ let slackApp: App | null = null;
 
 import { applyFilter } from "./shared.js";
 
+/** Match if any filter-list entry equals the conversation (channel) or the sender (user). */
 function applySlackFilter(
   config: SlackChannelConfig,
   channelId: string,
   userId: string,
-  isDm: boolean,
 ): boolean {
-  const id = isDm ? userId : channelId;
-  return applyFilter(config, (entry) => entry === id);
+  return applyFilter(
+    config,
+    (entry) => entry === channelId || entry === userId,
+  );
 }
 
 export interface SlackAdapterOptions {
@@ -147,8 +149,7 @@ export async function startSlackAdapter(
       return;
     }
 
-    const isDm = channelId.startsWith("D");
-    if (!applySlackFilter(config, channelId, userIdFromSlack, isDm)) {
+    if (!applySlackFilter(config, channelId, userIdFromSlack)) {
       debug(
         "Slack message filtered out: channel=%s user=%s",
         channelId,
@@ -159,6 +160,7 @@ export async function startSlackAdapter(
 
     if (!text.trim()) return;
 
+    const isDm = channelId.startsWith("D");
     const userId = threadTs
       ? `slack:${channelId}:${threadTs}`
       : `slack:${channelId}`;

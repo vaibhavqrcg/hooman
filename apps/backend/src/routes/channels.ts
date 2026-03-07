@@ -41,4 +41,40 @@ export function registerChannelRoutes(app: Express, ctx: AppContext): void {
       }
     },
   );
+
+  app.get(
+    "/api/channels/slack/conversations",
+    async (_req: Request, res: Response) => {
+      try {
+        const list = await channelService.getSlackConversations();
+        res.json({ conversations: list });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    },
+  );
+
+  app.get(
+    "/api/channels/whatsapp/chats",
+    async (_req: Request, res: Response) => {
+      try {
+        const list = await channelService.getWhatsAppChats();
+        res.json({ chats: list });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    },
+  );
+
+  app.get(
+    "/api/channels/whatsapp/contacts",
+    async (_req: Request, res: Response) => {
+      try {
+        const list = await channelService.getWhatsAppContacts();
+        res.json({ contacts: list });
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    },
+  );
 }

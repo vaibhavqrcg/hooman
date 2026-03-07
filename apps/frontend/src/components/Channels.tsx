@@ -14,6 +14,11 @@ import {
   patchChannels,
   getWhatsAppConnection,
   logoutWhatsApp,
+  getSlackConversations,
+  getWhatsAppChats,
+  getWhatsAppContacts,
+  type SlackConversation,
+  type SlackConversationType,
 } from "../api";
 
 const debug = createDebug("hooman:Channels");
@@ -95,8 +100,11 @@ import type { ChannelEntry } from "../api";
 import { Button } from "./Button";
 import { useDialog } from "./Dialog";
 import { Modal } from "./Modal";
-import { SlackConfigForm } from "./SlackConfigForm";
-import { WhatsAppConfigForm } from "./WhatsAppConfigForm";
+import { SlackConfigForm, type SlackConfigFormProps } from "./SlackConfigForm";
+import {
+  WhatsAppConfigForm,
+  type WhatsAppConfigFormProps,
+} from "./WhatsAppConfigForm";
 import { PageHeader } from "./PageHeader";
 
 export function Channels() {
@@ -437,18 +445,94 @@ function ConfigModal({
       )}
       {channel.id === "slack" && (
         <SlackConfigForm
-          id={formId}
-          config={config}
-          onSave={onSave}
-          saving={saving}
+          {...({
+            id: formId,
+            config,
+            onSave,
+            saving,
+            fetchFilterTabs: (config.agentIdentity as string)?.trim()
+              ? async () => {
+                  const { conversations } = await getSlackConversations();
+                  const channelTabTypes = new Set<SlackConversationType>([
+                    "channel",
+                    "private",
+                    "dm",
+                    "mpim",
+                  ]);
+                  const toOpt = (c: SlackConversation) => ({
+                    value: c.id,
+                    label:
+                      c.type === "user"
+                        ? c.name
+                        : c.type === "dm"
+                          ? `${c.name} (DM)`
+                          : c.type === "mpim"
+                            ? c.name
+                            : c.type === "channel" || c.type === "private"
+                              ? `#${c.name}`
+                              : c.name,
+                  });
+                  const byLabel = (
+                    a: { label: string },
+                    b: { label: string },
+                  ) =>
+                    a.label.localeCompare(b.label, undefined, {
+                      sensitivity: "base",
+                    });
+                  const users = conversations
+                    .filter((c) => c.type === "user")
+                    .map(toOpt)
+                    .sort(byLabel);
+                  const channelOpts = conversations
+                    .filter((c) => channelTabTypes.has(c.type))
+                    .map(toOpt)
+                    .sort(byLabel);
+                  return [
+                    { label: "Users", options: users },
+                    { label: "Channels", options: channelOpts },
+                  ];
+                }
+              : undefined,
+          } as SlackConfigFormProps)}
         />
       )}
       {channel.id === "whatsapp" && (
         <WhatsAppConfigForm
-          id={formId}
-          config={config}
-          onSave={onSave}
-          saving={saving}
+          {...({
+            id: formId,
+            config,
+            onSave,
+            saving,
+            fetchFilterTabs:
+              whatsAppConn?.status === "connected"
+                ? async () => {
+                    const [chatsRes, contactsRes] = await Promise.all([
+                      getWhatsAppChats(),
+                      getWhatsAppContacts(),
+                    ]);
+                    const chats = chatsRes.chats;
+                    const contacts = contactsRes.contacts;
+                    const chatOpts = chats
+                      .filter((c) => !c.isGroup)
+                      .map((c) => ({ value: c.id, label: c.name || c.id }));
+                    const groupOpts = chats
+                      .filter((c) => c.isGroup)
+                      .map((c) => ({
+                        value: c.id,
+                        label: `Group: ${c.name || c.id}`,
+                      }));
+                    const contactOpts = contacts.map((c) => ({
+                      value: c.id,
+                      label: c.name || c.id,
+                    }));
+                    return [
+                      { label: "Chats", options: chatOpts },
+                      { label: "Contacts", options: contactOpts },
+                      { label: "Groups", options: groupOpts },
+                    ];
+                  }
+                : undefined,
+          } as WhatsAppConfigFormProps)}
         />
       )}
     </Modal>

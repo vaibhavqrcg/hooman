@@ -317,6 +317,46 @@ export async function logoutWhatsApp(): Promise<{ ok: boolean }> {
   return res.json();
 }
 
+export type SlackConversationType =
+  | "channel"
+  | "private"
+  | "dm"
+  | "mpim"
+  | "user";
+
+export interface SlackConversation {
+  id: string;
+  name: string;
+  type: SlackConversationType;
+}
+
+/** Slack conversations (channels, DMs, etc.) for filter list multi-select. Requires Slack connected. */
+export async function getSlackConversations(): Promise<{
+  conversations: SlackConversation[];
+}> {
+  const res = await authFetch(`${BASE}/api/channels/slack/conversations`);
+  if (!res.ok) throw new Error(apiError(res, await res.text()));
+  return res.json();
+}
+
+/** WhatsApp chats for filter list multi-select. Requires WhatsApp connected. */
+export async function getWhatsAppChats(): Promise<{
+  chats: Array<{ id: string; name: string; isGroup: boolean }>;
+}> {
+  const res = await authFetch(`${BASE}/api/channels/whatsapp/chats`);
+  if (!res.ok) throw new Error(apiError(res, await res.text()));
+  return res.json();
+}
+
+/** WhatsApp contacts for filter list. Requires WhatsApp connected. */
+export async function getWhatsAppContacts(): Promise<{
+  contacts: Array<{ id: string; name: string; number?: string }>;
+}> {
+  const res = await authFetch(`${BASE}/api/channels/whatsapp/contacts`);
+  if (!res.ok) throw new Error(apiError(res, await res.text()));
+  return res.json();
+}
+
 /** WhatsApp connection status (for showing QR in Settings when linking device). */
 export async function getWhatsAppConnection(): Promise<{
   status: "disconnected" | "pairing" | "connected";

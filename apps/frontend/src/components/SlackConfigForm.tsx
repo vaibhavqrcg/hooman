@@ -1,18 +1,25 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Input } from "./Input";
 import { Radio } from "./Radio";
 import { FilterModeField } from "./FilterModeField";
+import type { FilterListSelectOption, FilterListTab } from "./FilterListSelect";
 
-export function SlackConfigForm({
-  id,
-  config,
-  onSave,
-}: {
+export interface SlackConfigFormProps {
   id: string;
   config: Record<string, unknown>;
   onSave: (c: Record<string, unknown>) => void;
   saving: boolean;
-}) {
+  fetchFilterOptions?: () => Promise<FilterListSelectOption[]>;
+  fetchFilterTabs?: () => Promise<FilterListTab[]>;
+}
+
+export const SlackConfigForm: React.FC<SlackConfigFormProps> = ({
+  id,
+  config,
+  onSave,
+  fetchFilterOptions,
+  fetchFilterTabs,
+}) => {
   const connectAsOptions = [
     { value: "bot", label: "Bot" },
     { value: "user", label: "User" },
@@ -90,8 +97,10 @@ export function SlackConfigForm({
         filterList={filterList}
         setFilterList={setFilterList}
         filterListLabel="Filter list (comma-separated IDs)"
-        filterListPlaceholder="User or channel IDs"
+        filterListPlaceholder="Search and select channels, DMs…"
+        fetchFilterOptions={fetchFilterOptions}
+        fetchFilterTabs={fetchFilterTabs}
       />
     </form>
   );
-}
+};
