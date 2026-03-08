@@ -78,6 +78,8 @@ export function createChannelService(): ChannelService {
                 enabled: false,
                 appToken: "",
                 userToken: "",
+                connectAs: "user",
+                filterMode: "all",
               },
             },
         whatsapp: channels.whatsapp
@@ -95,6 +97,8 @@ export function createChannelService(): ChannelService {
               enabled: false,
               config: {
                 enabled: false,
+                sessionPath: "",
+                filterMode: "all",
               },
             },
       };
