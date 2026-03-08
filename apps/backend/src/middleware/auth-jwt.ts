@@ -44,9 +44,9 @@ export async function verifyToken(token: string): Promise<AuthPayload | null> {
 
 /** Paths that skip JWT (any method). */
 const PUBLIC_PATHS = new Set([
-  "/health",
   "/api/auth/login",
   "/api/capabilities/mcp/oauth/callback",
+  "/api/health",
 ]);
 
 /** Path prefixes that skip JWT (for signed attachment view URLs). */
