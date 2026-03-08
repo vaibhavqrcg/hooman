@@ -142,7 +142,7 @@ What it asks (minimal prompts):
 
 What it does automatically:
 
-- Installs prerequisites (Node.js via nvm, Yarn, uv + Python, Go, nginx, certbot, native Google Chrome, build tools)
+- Installs prerequisites (Node.js via nvm, Yarn, uv + Python, Go, nginx, certbot, Puppeteer runtime libs, build tools)
 - Clones/updates the repo to `~/hooman`
 - Installs dependencies and builds the project
 - Runs database migrations

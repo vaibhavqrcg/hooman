@@ -6,7 +6,6 @@ APP_USER="hooman"
 APP_GROUP=""
 APP_HOME=""
 INSTALL_DIR=""
-PUPPETEER_EXECUTABLE_PATH=""
 
 if [[ "${EUID}" -eq 0 ]]; then
   SUDO=""
@@ -154,42 +153,86 @@ install_system_packages() {
     tar
 }
 
-install_native_browser() {
-  log "Installing native browser (non-snap)"
+install_puppeteer_system_deps() {
+  log "Installing Puppeteer runtime dependencies (no browser package)"
+  local installed=()
+  has_install_candidate() {
+    local candidate="$1"
+    local c
+    c="$(apt-cache policy "${candidate}" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2; exit}')"
+    [[ -n "${c}" && "${c}" != "(none)" ]]
+  }
+  pkg_in_list() {
+    local needle="$1" item
+    for item in "${installed[@]}"; do
+      [[ "${item}" == "${needle}" ]] && return 0
+    done
+    return 1
+  }
+  is_pkg_installed() {
+    dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
+  }
+  add_pkg() {
+    local candidate
+    for candidate in "$@"; do
+      if has_install_candidate "${candidate}"; then
+        # Skip packages already present on the system.
+        if is_pkg_installed "${candidate}"; then
+          return 0
+        fi
+        if ! pkg_in_list "${candidate}"; then
+          installed+=("${candidate}")
+        fi
+        return 0
+      fi
+    done
+    return 1
+  }
 
-  if command -v google-chrome-stable >/dev/null 2>&1; then
-    PUPPETEER_EXECUTABLE_PATH="$(command -v google-chrome-stable)"
-    return
-  fi
-  if command -v google-chrome >/dev/null 2>&1; then
-    PUPPETEER_EXECUTABLE_PATH="$(command -v google-chrome)"
-    return
-  fi
+  # Core Chromium/Puppeteer runtime libs (with Ubuntu 24 t64 fallbacks)
+  add_pkg libgbm-dev
+  add_pkg libasound2 libasound2t64
+  add_pkg libatk1.0-0 libatk1.0-0t64
+  add_pkg libc6
+  add_pkg libcairo2
+  add_pkg libcups2 libcups2t64
+  add_pkg libdbus-1-3
+  add_pkg libexpat1
+  add_pkg libfontconfig1
+  add_pkg libgcc1 libgcc-s1
+  add_pkg libgdk-pixbuf2.0-0
+  add_pkg libglib2.0-0 libglib2.0-0t64
+  add_pkg libgtk-3-0 libgtk-3-0t64
+  add_pkg libnspr4
+  add_pkg libpango-1.0-0
+  add_pkg libpangocairo-1.0-0
+  add_pkg libstdc++6
+  add_pkg libx11-6
+  add_pkg libx11-xcb1
+  add_pkg libxcb1
+  add_pkg libxcomposite1
+  add_pkg libxcursor1
+  add_pkg libxdamage1
+  add_pkg libxext6
+  add_pkg libxfixes3
+  add_pkg libxi6
+  add_pkg libxrandr2
+  add_pkg libxrender1
+  add_pkg libxss1
+  add_pkg libxtst6
+  add_pkg libnss3
+  add_pkg fonts-liberation
+  add_pkg xdg-utils
+  add_pkg wget
 
-  local arch
-  arch="$(dpkg --print-architecture)"
-  if [[ "${arch}" != "amd64" ]]; then
-    log "Skipping automatic browser install on '${arch}' (Google Chrome .deb is amd64-only). Install a native browser manually and set PUPPETEER_EXECUTABLE_PATH if needed."
-    return
-  fi
+  # Optional legacy/compat packages (best effort)
+  add_pkg gconf-service || true
+  add_pkg libgconf-2-4 || true
+  add_pkg libappindicator1 libayatana-appindicator3-1 || true
+  add_pkg lsb-release || true
 
-  ${SUDO} mkdir -p /etc/apt/keyrings
-  if [[ ! -f /etc/apt/keyrings/google-chrome.gpg ]]; then
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
-      | ${SUDO} gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg
-  fi
-
-  ${SUDO} tee /etc/apt/sources.list.d/google-chrome.list >/dev/null <<EOF
-deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main
-EOF
-
-  ${SUDO} apt-get update -y
-  ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y google-chrome-stable
-
-  if command -v google-chrome-stable >/dev/null 2>&1; then
-    PUPPETEER_EXECUTABLE_PATH="$(command -v google-chrome-stable)"
-  elif command -v google-chrome >/dev/null 2>&1; then
-    PUPPETEER_EXECUTABLE_PATH="$(command -v google-chrome)"
+  if ((${#installed[@]} > 0)); then
+    ${SUDO} env DEBIAN_FRONTEND=noninteractive apt-get install -y "${installed[@]}"
   fi
 }
 
@@ -271,16 +314,11 @@ write_env_file() {
 API_BASE_URL=${api_base}
 CHROMA_URL=http://127.0.0.1:8000
 JWT_SECRET=${JWT_SECRET}
-PUPPETEER_HEADLESS=true
 REDIS_URL=redis://127.0.0.1:6379
 VITE_API_BASE=${vite_api_base}
 WEB_AUTH_USERNAME=${WEB_AUTH_USERNAME}
 WEB_AUTH_PASSWORD_HASH=${WEB_AUTH_PASSWORD_HASH}
 EOF
-
-  if [[ -n "${PUPPETEER_EXECUTABLE_PATH}" ]]; then
-    echo "PUPPETEER_EXECUTABLE_PATH=${PUPPETEER_EXECUTABLE_PATH}" >> "${INSTALL_DIR}/.env"
-  fi
 }
 
 install_node_deps() {
@@ -536,7 +574,7 @@ main() {
   prompt_inputs
   setup_dedicated_user
   install_system_packages
-  install_native_browser
+  install_puppeteer_system_deps
   clone_or_update_repo
   install_nvm_node_yarn
   install_uv_python

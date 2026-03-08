@@ -115,7 +115,6 @@ export async function startWhatsAppAdapter(
     authStrategy: new LocalAuth({ dataPath: authFolder }),
     puppeteer: {
       executablePath: executablePath || undefined,
-      headless: env.PUPPETEER_HEADLESS,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
