@@ -121,6 +121,39 @@ To stop: `yarn stop` (or `npx pm2 stop ecosystem.config.cjs`).
 
 ---
 
+## Instant setup
+
+For a fresh Ubuntu server, run the installer directly:
+
+```bash
+# with curl
+curl -fsSL https://raw.githubusercontent.com/vaibhavpandeyvpz/hooman/main/setup-linux.sh | bash
+
+# or with wget
+wget -qO- https://raw.githubusercontent.com/vaibhavpandeyvpz/hooman/main/setup-linux.sh | bash
+```
+
+What it asks (minimal prompts):
+
+- `Frontend domain` (optional)
+- `API domain` (optional)
+- `Web auth username`
+- `Web auth password`
+
+What it does automatically:
+
+- Installs prerequisites (Node.js via nvm, Yarn, uv + Python, Go, nginx, certbot, Chromium, build tools)
+- Clones/updates the repo to `~/hooman`
+- Installs dependencies and builds the project
+- Generates `WEB_AUTH_PASSWORD_HASH` using `yarn hash-password`
+- Creates `.env` with sane defaults, including generated `JWT_SECRET`
+- Installs and runs required services (`valkey`, `chroma`) natively as systemd services
+- Starts app processes with PM2 and saves PM2 state
+- If both domains are provided: configures nginx and requests TLS certs via certbot
+- If domains are omitted: performs local-only install (no nginx/certbot setup)
+
+---
+
 ## Development
 
 Full stack with live reload (API, frontend, Slack worker, WhatsApp worker, cron, event-queue):
@@ -296,6 +329,7 @@ Runtime data lives under **`workspace/`**: `hooman.db`, `config.json`, `attachme
 | `yarn stop`          | Stop PM2 processes.                                                               |
 | `yarn restart`       | Restart PM2 processes.                                                            |
 | `yarn hash-password` | Generate argon2id hash for `WEB_AUTH_PASSWORD_HASH`.                              |
+| `./setup-linux.sh`   | Automated Ubuntu VM setup (deps, build, env, PM2, optional nginx + TLS).          |
 
 After code or config changes in production: `yarn build` then `yarn restart`.
 

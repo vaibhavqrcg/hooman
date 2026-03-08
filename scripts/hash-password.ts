@@ -13,6 +13,7 @@ function getPasswordFromArgv(): string | null {
       return arg.slice("--password=".length);
     }
   }
+
   return null;
 }
 
@@ -31,12 +32,14 @@ async function main(): Promise<void> {
   if (password === null) {
     password = await promptPassword();
   }
+
   if (!password || !password.trim()) {
     console.error(
       "No password provided. Use --password=xxx or enter at prompt.",
     );
     process.exit(1);
   }
+
   const hash = await argon2.hash(password.trim(), { type: argon2.argon2id });
   console.log("\nAdd this line to your .env file:\n");
   console.log(`WEB_AUTH_PASSWORD_HASH=${hash}`);
