@@ -74,7 +74,11 @@ export function createChannelService(): ChannelService {
               name: "Slack",
               alwaysOn: false,
               enabled: false,
-              config: null,
+              config: {
+                enabled: false,
+                appToken: "",
+                userToken: "",
+              },
             },
         whatsapp: channels.whatsapp
           ? {
@@ -89,7 +93,9 @@ export function createChannelService(): ChannelService {
               name: "WhatsApp",
               alwaysOn: false,
               enabled: false,
-              config: null,
+              config: {
+                enabled: false,
+              },
             },
       };
     },
