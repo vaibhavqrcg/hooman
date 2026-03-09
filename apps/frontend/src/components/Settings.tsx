@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   getConfig,
   saveConfig,
+  restartServices,
   type AppConfig,
   type LLMProviderId,
   type ToolApprovalModeId,
@@ -41,6 +42,7 @@ export function Settings() {
   const [loading, setLoading] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [message, setMessage] = useState<{
     type: "ok" | "err";
     text: string;
@@ -113,12 +115,37 @@ export function Settings() {
     );
   }
 
+  async function handleRestartServices() {
+    setRestarting(true);
+    setMessage(null);
+    try {
+      await restartServices();
+      setMessage({
+        type: "ok",
+        text: "Restarting all services. The page may disconnect; refresh in a few seconds if needed.",
+      });
+    } catch (e) {
+      setMessage({ type: "err", text: (e as Error).message });
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0">
       <PageHeader
         title="Settings"
         subtitle="Your API keys and how Hooman thinks and remembers."
-      />
+      >
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleRestartServices}
+          disabled={restarting}
+        >
+          {restarting ? "Restarting…" : "Restart all services"}
+        </Button>
+      </PageHeader>
       <div
         ref={scrollContainerRef}
         className="flex-1 overflow-y-auto p-4 md:p-6 min-h-0"

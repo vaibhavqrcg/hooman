@@ -533,6 +533,15 @@ export async function saveConfig(
   return res.json();
 }
 
+/** Ask all services (API + workers) to exit so PM2 restarts them. */
+export async function restartServices(): Promise<{ ok: boolean }> {
+  const res = await authFetch(`${BASE}/api/restart-services`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function getSchedule(): Promise<{
   tasks: {
     id: string;
