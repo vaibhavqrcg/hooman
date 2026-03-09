@@ -11,6 +11,7 @@ import {
   closeReloadWatch,
   type ReloadScope,
 } from "../utils/reload-flag.js";
+import { createSubscriber, RESTART_WORKERS_CHANNEL } from "../utils/pubsub.js";
 import { env } from "../env.js";
 
 export interface BootstrapOptions {
@@ -57,6 +58,9 @@ export async function bootstrapWorker(opts: BootstrapOptions): Promise<void> {
     await closeRedis();
     process.exit(0);
   };
+  const restartSub = createSubscriber();
+  if (restartSub)
+    restartSub.subscribe(RESTART_WORKERS_CHANNEL, () => void shutdown());
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

@@ -11,6 +11,7 @@ import {
   getKillSwitchEnabled,
   setKillSwitchEnabled,
 } from "../agents/kill-switch.js";
+import { publish, RESTART_WORKERS_CHANNEL } from "../utils/pubsub.js";
 import {
   getToolApprovalAllowEverything,
   setToolApprovalAllowEverything,
@@ -112,6 +113,11 @@ export function registerSettingsRoutes(app: Express, ctx: AppContext): void {
       res.json(updated);
     },
   );
+
+  app.post("/api/restart-services", (_req: Request, res: Response) => {
+    publish(RESTART_WORKERS_CHANNEL, "1");
+    res.json({ ok: true });
+  });
 
   app.post(
     "/api/realtime/client-secret",

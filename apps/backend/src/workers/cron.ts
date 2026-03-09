@@ -14,6 +14,7 @@ import type { RawDispatchInput } from "../types.js";
 import { initDb } from "../data/db.js";
 import { initRedis, closeRedis } from "../data/redis.js";
 import { initReloadWatch, closeReloadWatch } from "../utils/reload-flag.js";
+import { createSubscriber, RESTART_WORKERS_CHANNEL } from "../utils/pubsub.js";
 import { initScheduleStore } from "../scheduling/schedule-store.js";
 import type { ScheduleStore } from "../scheduling/schedule-store.js";
 import type { ScheduledTask } from "../types.js";
@@ -148,6 +149,9 @@ async function main() {
     debug("Cron worker stopped.");
     process.exit(0);
   };
+  const restartSub = createSubscriber();
+  if (restartSub)
+    restartSub.subscribe(RESTART_WORKERS_CHANNEL, () => void shutdown());
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }

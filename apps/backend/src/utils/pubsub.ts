@@ -5,6 +5,9 @@
  */
 import { getRedis } from "../data/redis.js";
 
+/** Channel for "restart all services": subscribers exit so PM2 restarts them. */
+export const RESTART_WORKERS_CHANNEL = "hooman:restart-workers";
+
 /** RPC request envelope (publish to request channel). */
 export interface RedisRpcRequest {
   requestId: string;

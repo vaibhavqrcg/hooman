@@ -35,6 +35,7 @@ import {
   publish,
   createSubscriber,
   createRpcMessageHandler,
+  RESTART_WORKERS_CHANNEL,
 } from "../utils/pubsub.js";
 import { env } from "../env.js";
 import { RESPONSE_DELIVERY_CHANNEL } from "../types.js";
@@ -202,6 +203,8 @@ async function main() {
     await closeRedis();
     process.exit(0);
   };
+  if (mcpReloadSub)
+    mcpReloadSub.subscribe(RESTART_WORKERS_CHANNEL, () => void shutdown());
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
 }
