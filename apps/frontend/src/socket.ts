@@ -21,6 +21,23 @@ export interface ChatResultPayload {
   message: ChatResultMessage;
 }
 
+export type ChatProgressStage =
+  | "thinking"
+  | "searching"
+  | "organizing"
+  | "writing"
+  | "awaiting_approval"
+  | "done";
+
+export interface ChatProgressPayload {
+  eventId: string;
+  progress: {
+    stage: ChatProgressStage;
+    delta?: string;
+    done?: boolean;
+  };
+}
+
 /** Emitted when the agent chose not to respond ([hooman:skip]). Reject from waitForChatResult so the UI can stop "thinking" without showing a message. */
 export interface ChatSkippedPayload {
   eventId: string;
@@ -75,7 +92,11 @@ export function resetSocket(): void {
  */
 export function waitForChatResult(
   eventId: string,
-  options?: { timeoutMs?: number; baseUrl?: string },
+  options?: {
+    timeoutMs?: number;
+    baseUrl?: string;
+    onProgress?: (progress: ChatProgressPayload["progress"]) => void;
+  },
 ): Promise<ChatResultMessage> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const baseUrl = options?.baseUrl ?? import.meta.env.VITE_API_BASE;
@@ -103,6 +124,11 @@ export function waitForChatResult(
       reject(new ChatSkippedError());
     };
 
+    const progressHandler = (payload: ChatProgressPayload) => {
+      if (payload.eventId !== eventId) return;
+      options?.onProgress?.(payload.progress);
+    };
+
     const onDisconnect = (reason: string) => {
       cleanup();
       reject(new Error(`Socket disconnected: ${reason}`));
@@ -112,11 +138,13 @@ export function waitForChatResult(
       clearTimeout(timeout);
       s.off("chat-result", resultHandler);
       s.off("chat-skipped", skippedHandler);
+      s.off("chat-progress", progressHandler);
       s.off("disconnect", onDisconnect);
     };
 
     s.on("chat-result", resultHandler);
     s.on("chat-skipped", skippedHandler);
+    s.on("chat-progress", progressHandler);
     s.once("disconnect", onDisconnect);
     if (s.connected) {
       // already connected

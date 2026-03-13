@@ -176,6 +176,13 @@ async function main() {
         io.emit("chat-skipped", { eventId: payload.eventId });
         return;
       }
+      if ("progress" in payload && payload.progress) {
+        io.emit("chat-progress", {
+          eventId: payload.eventId,
+          progress: payload.progress,
+        });
+        return;
+      }
       if (!("message" in payload)) return;
       const { eventId, message } = payload;
       if (

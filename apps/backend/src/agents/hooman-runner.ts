@@ -9,7 +9,11 @@ import {
   createSkillService,
   type SkillService,
 } from "../capabilities/skills/skills-service.js";
-import type { AuditLogEntry, ChannelMeta } from "../types.js";
+import type {
+  AuditLogEntry,
+  ChannelMeta,
+  ChatProgressStage,
+} from "../types.js";
 import {
   getConfig,
   getFullStaticAgentInstructionsAppend,
@@ -66,6 +70,13 @@ const debug = createDebug("hooman:hooman-runner");
 const DEBUG_TOOL_LOG_MAX = 200; // max chars for args/result in logs
 const AUDIT_TOOL_PAYLOAD_MAX = 100; // max chars for tool args/result in audit log
 
+export type RunProgressStage = ChatProgressStage;
+
+export interface RunStreamCallbacks {
+  onStage?: (stage: RunProgressStage) => void | Promise<void>;
+  onTextDelta?: (delta: string) => void | Promise<void>;
+}
+
 export interface RunChatOptions {
   channel?: ChannelMeta;
   sessionId?: string;
@@ -102,6 +113,7 @@ export interface HoomanRunner {
     history: AgentInputItem[],
     message: string,
     options?: RunChatOptions,
+    callbacks?: RunStreamCallbacks,
   ): Promise<RunChatResult>;
   /** Execute a single tool by name (used on approval confirm to run the tool before resume). */
   executeTool(toolName: string, toolArgs: unknown): Promise<unknown>;
@@ -202,6 +214,26 @@ function parseToolArgs(rawArgs: string | undefined): unknown {
   }
 }
 
+function mapRunItemEventNameToStage(
+  name: string,
+): Exclude<RunProgressStage, "done"> {
+  switch (name) {
+    case "tool_search_called":
+    case "tool_called":
+      return "searching";
+    case "tool_search_output_created":
+    case "tool_output":
+    case "reasoning_item_created":
+      return "organizing";
+    case "message_output_created":
+      return "writing";
+    case "tool_approval_requested":
+      return "awaiting_approval";
+    default:
+      return "thinking";
+  }
+}
+
 export async function createHoomanRunner(options: {
   agentTools: Record<string, unknown>;
   /** Prefixed tool names that require HITL approval before execution. */
@@ -257,7 +289,7 @@ export async function createHoomanRunner(options: {
   });
 
   return {
-    async generate(history, message, options) {
+    async generate(history, message, options, callbacks) {
       const input: AgentInputItem[] = [...history];
       const hasUserContent =
         (typeof message === "string" && message.trim() !== "") ||
@@ -286,7 +318,34 @@ export async function createHoomanRunner(options: {
 
       const result = await run(agent, input, {
         maxTurns,
+        stream: true,
       });
+      let lastStage: RunProgressStage | null = null;
+      const emitStage = async (stage: RunProgressStage) => {
+        if (!callbacks?.onStage || lastStage === stage) return;
+        lastStage = stage;
+        await callbacks.onStage(stage);
+      };
+      await emitStage("thinking");
+      for await (const event of result) {
+        if (event.type === "raw_model_stream_event") {
+          const data = event.data as { type?: string; delta?: string };
+          if (
+            data.type === "output_text_delta" &&
+            typeof data.delta === "string" &&
+            data.delta.length > 0
+          ) {
+            await emitStage("writing");
+            if (callbacks?.onTextDelta) await callbacks.onTextDelta(data.delta);
+          }
+          continue;
+        }
+        if (event.type === "run_item_stream_event") {
+          const stage = mapRunItemEventNameToStage(event.name);
+          await emitStage(stage);
+        }
+      }
+      await result.completed;
       const interruption = result.interruptions?.[0];
       if (interruption) {
         const name =
@@ -321,6 +380,7 @@ export async function createHoomanRunner(options: {
           },
         };
       }
+      await emitStage("done");
 
       const stepCount = result.newItems?.length ?? 0;
       const finishReason = result.interruptions?.length

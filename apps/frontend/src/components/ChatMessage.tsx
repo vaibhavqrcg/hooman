@@ -251,7 +251,11 @@ export function ChatMessage({
         className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} max-w-[85%] sm:max-w-[80%]`}
       >
         <div
-          className={`rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm shadow-card ${
+          className={`px-3 md:px-4 py-2.5 md:py-3 text-sm shadow-card ${
+            m.role === "user"
+              ? "rounded-t-2xl rounded-bl-2xl rounded-br-sm"
+              : "rounded-t-2xl rounded-br-2xl rounded-bl-sm"
+          } ${
             m.role === "user"
               ? "bg-gradient-accent-subtle border border-hooman-accent/25 text-white"
               : "bg-hooman-surface border border-hooman-border/80 text-zinc-200"

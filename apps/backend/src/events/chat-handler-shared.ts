@@ -6,6 +6,7 @@ import type {
   HoomanRunner,
   RunChatOptions,
   RunChatResult,
+  RunStreamCallbacks,
 } from "../agents/hooman-runner.js";
 import type {
   ChannelMeta,
@@ -32,6 +33,7 @@ export interface RunAgentFn {
     text: string,
     runOptions?: RunChatOptions,
     timeoutMs?: number | null,
+    callbacks?: RunStreamCallbacks,
   ): Promise<RunChatResult>;
 }
 
@@ -43,9 +45,10 @@ export function createRunAgent(
     text,
     runOptions,
     timeoutMs,
+    callbacks,
   ): Promise<RunChatResult> => {
     const runner = await getRunner();
-    const runPromise = runner.generate(history, text, runOptions);
+    const runPromise = runner.generate(history, text, runOptions, callbacks);
     if (timeoutMs == null || timeoutMs <= 0) return runPromise;
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new ChatTimeoutError()), timeoutMs);
@@ -88,13 +91,13 @@ export function dispatchResponseToChannel(
   if (source === "slack") {
     const meta = channelMeta as SlackChannelMeta | undefined;
     if (meta?.channel === "slack") {
+      const replyThreadTs =
+        meta.threadTs ?? (meta.replyInThread ? meta.messageTs : undefined);
       const payload: ResponseDeliveryPayload = {
         channel: "slack",
         channelId: meta.channelId,
         text: assistantText,
-        ...(meta.replyInThread && meta.threadTs
-          ? { threadTs: meta.threadTs }
-          : {}),
+        ...(replyThreadTs ? { threadTs: replyThreadTs } : {}),
       };
       return publishResponse(payload);
     }

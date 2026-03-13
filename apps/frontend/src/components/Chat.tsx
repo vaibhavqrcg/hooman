@@ -8,7 +8,11 @@ import {
   clearChatHistory,
   type ChatAttachmentMeta,
 } from "../api";
-import { waitForChatResult, ChatSkippedError } from "../socket";
+import {
+  waitForChatResult,
+  ChatSkippedError,
+  type ChatProgressStage,
+} from "../socket";
 import { useDialog } from "./Dialog";
 import { Button } from "./Button";
 import { ChatMessage, isApprovalCard, isApprovalReply } from "./ChatMessage";
@@ -18,6 +22,24 @@ import { PageHeader } from "./PageHeader";
 const debug = createDebug("hooman:Chat");
 const CHAT_PAGE_SIZE = 50;
 
+function labelForStage(stage: ChatProgressStage | null): string {
+  switch (stage) {
+    case "searching":
+      return "Searching...";
+    case "organizing":
+      return "Organizing...";
+    case "writing":
+      return "Writing...";
+    case "awaiting_approval":
+      return "Awaiting approval...";
+    case "done":
+      return "Done";
+    case "thinking":
+    default:
+      return "Thinking...";
+  }
+}
+
 export function Chat() {
   const dialog = useDialog();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
@@ -25,6 +47,8 @@ export function Chat() {
   const [chatPage, setChatPage] = useState(1);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [liveStage, setLiveStage] = useState<ChatProgressStage | null>(null);
+  const [liveText, setLiveText] = useState("");
   const [clearing, setClearing] = useState(false);
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
   const queueRef = useRef<QueuedMessage[]>([]);
@@ -53,11 +77,24 @@ export function Chat() {
   const sendOne = useCallback(
     async (text: string, attachmentIds?: string[]) => {
       setLoading(true);
+      setLiveStage("thinking");
+      setLiveText("");
       try {
         const { eventId } = await sendMessage(text, attachmentIds);
         const message = await waitForChatResult(eventId, {
           timeoutMs: 120_000,
+          onProgress: (progress) => {
+            if (progress.stage) setLiveStage(progress.stage);
+            if (
+              typeof progress.delta === "string" &&
+              progress.delta.length > 0
+            ) {
+              setLiveText((prev) => prev + progress.delta);
+            }
+          },
         });
+        setLiveStage(null);
+        setLiveText("");
         setMessages((prev) => [
           ...prev,
           {
@@ -66,6 +103,8 @@ export function Chat() {
           },
         ]);
       } catch (err) {
+        setLiveStage(null);
+        setLiveText("");
         if (err instanceof ChatSkippedError) {
           // Agent chose not to respond; stop thinking, do not add a message
           return;
@@ -123,11 +162,21 @@ export function Chat() {
       { role: "user" as const, text, timestamp: replyTimestamp },
     ]);
     setLoading(true);
+    setLiveStage("thinking");
+    setLiveText("");
     try {
       const { eventId } = await sendMessage(text);
       const message = await waitForChatResult(eventId, {
         timeoutMs: 120_000,
+        onProgress: (progress) => {
+          if (progress.stage) setLiveStage(progress.stage);
+          if (typeof progress.delta === "string" && progress.delta.length > 0) {
+            setLiveText((prev) => prev + progress.delta);
+          }
+        },
       });
+      setLiveStage(null);
+      setLiveText("");
       setMessages((prev) => [
         ...prev,
         {
@@ -136,6 +185,8 @@ export function Chat() {
         },
       ]);
     } catch (err) {
+      setLiveStage(null);
+      setLiveText("");
       if (err instanceof ChatSkippedError) return;
       const msg = (err as Error).message;
       setMessages((prev) => [
@@ -292,12 +343,19 @@ export function Chat() {
         })}
         {loading && (
           <div className="flex justify-start animate-fade-in">
-            <div className="flex items-center gap-2.5 bg-hooman-surface border border-hooman-border rounded-2xl px-4 py-3 text-hooman-muted text-sm shadow-card">
-              <Loader2
-                className="w-4 h-4 shrink-0 animate-spin text-hooman-accent"
-                aria-hidden
-              />
-              <span>Thinking…</span>
+            <div className="flex flex-col gap-2 bg-hooman-surface border border-hooman-border rounded-2xl px-4 py-3 text-hooman-muted text-sm shadow-card max-w-[85%] sm:max-w-[80%]">
+              <div className="flex items-center gap-2.5">
+                <Loader2
+                  className="w-4 h-4 shrink-0 animate-spin text-hooman-accent"
+                  aria-hidden
+                />
+                <span>{labelForStage(liveStage)}</span>
+              </div>
+              {liveText.trim().length > 0 && (
+                <div className="text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                  {liveText}
+                </div>
+              )}
             </div>
           </div>
         )}

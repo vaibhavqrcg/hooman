@@ -10,9 +10,14 @@ import type {
   HoomanRunner,
   RunChatOptions,
   RunChatResult,
+  RunStreamCallbacks,
 } from "../agents/hooman-runner.js";
 import type { AgentInputItem } from "@openai/agents";
-import type { ChannelMeta, NormalizedMessagePayload } from "../types.js";
+import type {
+  ChannelMeta,
+  NormalizedMessagePayload,
+  ChatProgressStage,
+} from "../types.js";
 import type { PendingApproval } from "../approval/approval-store.js";
 import {
   getPending,
@@ -101,10 +106,125 @@ export interface ChatHandlerDeps {
   invalidateRunnerCache?: () => void;
 }
 
+function publishApiProgress(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  eventId: string,
+  stage: import("../types.js").ChatProgressStage,
+  delta?: string,
+): void {
+  publishResponse({
+    channel: "api",
+    eventId,
+    progress: {
+      stage,
+      ...(typeof delta === "string" && delta.length > 0 ? { delta } : {}),
+      ...(stage === "done" ? { done: true } : {}),
+    },
+  });
+}
+
+function stageLabel(stage: ChatProgressStage): string {
+  switch (stage) {
+    case "searching":
+      return "Searching...";
+    case "organizing":
+      return "Organizing...";
+    case "writing":
+      return "Writing...";
+    case "awaiting_approval":
+      return "Awaiting approval...";
+    case "done":
+      return "Done";
+    case "thinking":
+    default:
+      return "Thinking...";
+  }
+}
+
+function publishSlackStatus(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  channelMeta: ChannelMeta | undefined,
+  stage: ChatProgressStage,
+): void {
+  if (!channelMeta || channelMeta.channel !== "slack") return;
+  const threadTs = channelMeta.threadTs ?? channelMeta.messageTs;
+  publishResponse({
+    channel: "slack",
+    channelId: channelMeta.channelId,
+    ...(threadTs ? { threadTs } : {}),
+    status: {
+      stage,
+      label: stageLabel(stage),
+      ...(stage === "done" ? { done: true } : {}),
+    },
+  });
+}
+
+function createApiRunCallbacks(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  eventId: string,
+  source: string,
+): RunStreamCallbacks | undefined {
+  if (source !== "api") return undefined;
+  return {
+    onStage: async (stage) => {
+      publishApiProgress(publishResponse, eventId, stage);
+    },
+    onTextDelta: async (delta) => {
+      publishApiProgress(publishResponse, eventId, "writing", delta);
+    },
+  };
+}
+
+function createSlackRunCallbacks(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  source: string,
+  channelMeta: ChannelMeta | undefined,
+): RunStreamCallbacks | undefined {
+  if (source !== "slack") return undefined;
+  if (!channelMeta || channelMeta.channel !== "slack") return undefined;
+  if ((channelMeta.connectAs ?? "bot") !== "bot") return undefined;
+  return {
+    onStage: async (stage) => {
+      publishSlackStatus(publishResponse, channelMeta, stage);
+    },
+  };
+}
+
+async function runAgentWithSignals(
+  deps: ChatHandlerDeps,
+  params: {
+    event: NormalizedEvent;
+    history: AgentInputItem[];
+    text: string;
+    runOptions: RunChatOptions;
+    timeoutMs: number;
+  },
+): Promise<RunChatResult> {
+  const apiCallbacks = createApiRunCallbacks(
+    deps.publishResponse,
+    params.event.id,
+    params.event.source,
+  );
+  const slackCallbacks = createSlackRunCallbacks(
+    deps.publishResponse,
+    params.event.source,
+    params.runOptions.channel as ChannelMeta | undefined,
+  );
+  const callbacks = apiCallbacks ?? slackCallbacks;
+  return await deps.runAgent(
+    params.history,
+    params.text,
+    params.runOptions,
+    params.timeoutMs,
+    callbacks,
+  );
+}
+
 export function createChatHandler(
   deps: ChatHandlerDeps,
 ): (event: NormalizedEvent) => Promise<void> {
-  const { context, auditLog, publishResponse, runAgent } = deps;
+  const { context, auditLog, publishResponse } = deps;
 
   const dispatchResponse = (
     eventId: string,
@@ -165,7 +285,13 @@ export function createChatHandler(
 
     try {
       const thread = await context.getThreadForAgent(userId);
-      const result = await runAgent(thread, text, runOptions, chatTimeoutMs);
+      const result = await runAgentWithSignals(deps, {
+        event,
+        history: thread,
+        text,
+        runOptions,
+        timeoutMs: chatTimeoutMs,
+      });
 
       if (result.needsApproval) {
         await handleNeedsApproval(deps, {
@@ -332,7 +458,7 @@ async function handleApprovalReject(
     consumed,
     dispatchResponse,
   } = ctx;
-  const { context, runAgent } = deps;
+  const { context } = deps;
 
   let thread: AgentInputItem[];
   try {
@@ -350,6 +476,7 @@ async function handleApprovalReject(
     output: "Execution denied by user.",
   } as AgentInputItem;
   thread.push(toolResultMessage);
+  await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
 
   const nextTool = getNextToolCallNeedingApproval(thread);
   if (nextTool) {
@@ -370,23 +497,15 @@ async function handleApprovalReject(
 
   // All tools in this assistant message now have a result (approved or rejected). Run agent once to produce final response using all results.
   try {
-    const result = await runAgent(
-      thread,
-      "User denied one or more tools. Use the tool results for any tools that were approved; for any that were denied, say the user declined that check.",
+    const result = await runAgentWithSignals(deps, {
+      event,
+      history: thread,
+      text: "User denied one or more tools. Use the tool results for any tools that were approved; for any that were denied, say the user declined that check.",
       runOptions,
-      chatTimeoutMs,
-    );
+      timeoutMs: chatTimeoutMs,
+    });
 
     if (result.needsApproval) {
-      // We already persisted [user, assistant(tool calls)] in the first handleNeedsApproval.
-      // Persist only tool results + "User denied." Do NOT persist the new assistant message.
-      const histLen = consumed.historyLength ?? 0;
-      const turnFromHistory =
-        result.needsApproval.threadSnapshot.slice(histLen);
-      const newMessagesOnly = turnFromHistory.slice(2, -1);
-      if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(payload.userId, newMessagesOnly);
-      }
       await handleNeedsApproval(deps, {
         event,
         payload,
@@ -414,15 +533,9 @@ async function handleApprovalReject(
       assistantText,
     );
 
-    // We already persisted [user, assistant(tool call)] in handleNeedsApproval.
-    const historyLength = consumed.historyLength ?? 0;
-    const turnFromHistory = thread.slice(historyLength);
-    const toolResultsAndRun = [
-      ...turnFromHistory.slice(2),
-      ...(result.messages ?? []),
-    ] as AgentInputItem[];
-    if (toolResultsAndRun.length) {
-      await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
+    const runMessages = result.messages ?? [];
+    if (runMessages.length) {
+      await context.addTurnToAgentThread(payload.userId, runMessages);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
         {
@@ -470,7 +583,7 @@ async function handleApprovalConfirm(
     chatTimeoutMs,
     dispatchResponse,
   } = ctx;
-  const { context, auditLog, getRunner, runAgent } = deps;
+  const { context, auditLog, getRunner } = deps;
 
   const consumed = await consumePending(payload.userId, channelKey);
   if (!consumed) {
@@ -541,6 +654,7 @@ async function handleApprovalConfirm(
           : JSON.stringify(toolResult ?? {}),
     } as AgentInputItem;
     thread.push(toolResultMessage);
+    await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
 
     const nextTool = getNextToolCallNeedingApproval(thread);
     if (nextTool) {
@@ -560,19 +674,15 @@ async function handleApprovalConfirm(
     }
 
     // All tools in this assistant message now have a result (approved or rejected). Run agent once to produce final response using all results.
-    const result = await runAgent(thread, "", runOptions, chatTimeoutMs);
+    const result = await runAgentWithSignals(deps, {
+      event,
+      history: thread,
+      text: "",
+      runOptions,
+      timeoutMs: chatTimeoutMs,
+    });
 
     if (result.needsApproval) {
-      // We already persisted [user, assistant(tool calls)] in the first handleNeedsApproval.
-      // Persist only tool results + "User approved." Do NOT persist the new assistant message
-      // (it has tool calls with no results yet); it stays in pending until we have results.
-      const histLen = consumed.historyLength ?? 0;
-      const turnFromHistory =
-        result.needsApproval.threadSnapshot.slice(histLen);
-      const newMessagesOnly = turnFromHistory.slice(2, -1);
-      if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(payload.userId, newMessagesOnly);
-      }
       await handleNeedsApproval(deps, {
         event,
         payload,
@@ -600,16 +710,9 @@ async function handleApprovalConfirm(
       assistantText,
     );
 
-    // We already persisted [user, assistant(tool call)] in handleNeedsApproval.
-    // Persist all tool results (from this sequential approval chain) + run result.
-    const historyLength = consumed.historyLength ?? 0;
-    const turnFromHistory = thread.slice(historyLength);
-    const toolResultsAndRun = [
-      ...turnFromHistory.slice(2), // skip user + assistant; keep all tool results
-      ...(result.messages ?? []),
-    ] as AgentInputItem[];
-    if (toolResultsAndRun.length) {
-      await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
+    const runMessages = result.messages ?? [];
+    if (runMessages.length) {
+      await context.addTurnToAgentThread(payload.userId, runMessages);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
         {

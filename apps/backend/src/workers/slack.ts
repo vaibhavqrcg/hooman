@@ -10,6 +10,7 @@ import {
   startSlackAdapter,
   stopSlackAdapter,
   sendMessageToChannel,
+  setAssistantThreadStatus,
 } from "../channels/slack-adapter.js";
 import { createEventQueue } from "../events/event-queue.js";
 import { createQueueDispatcher } from "../events/enqueue.js";
@@ -30,25 +31,39 @@ async function startAdapter(): Promise<void> {
     debug("REDIS_URL required for Slack worker");
     return;
   }
-  eventQueue = createEventQueue({ connection: env.REDIS_URL });
+  if (!eventQueue) {
+    eventQueue = createEventQueue({ connection: env.REDIS_URL });
+  }
   const dispatcher = createQueueDispatcher(eventQueue);
-  await startSlackAdapter(dispatcher, () => getChannelsConfig().slack, {
-    onAgentIdentityResolved(userId, profile) {
-      const current = getChannelsConfig();
-      if (current.slack) {
-        updateChannelsConfig({
-          slack: {
-            ...current.slack,
-            agentIdentity: userId,
-            ...(profile && Object.values(profile).some(Boolean)
-              ? { profile }
-              : {}),
-          },
-        });
-        debug("Slack agent identity saved: %s", userId);
-      }
-    },
-  });
+  try {
+    await startSlackAdapter(dispatcher, () => getChannelsConfig().slack, {
+      onAgentIdentityResolved(userId, profile) {
+        const current = getChannelsConfig();
+        if (current.slack) {
+          updateChannelsConfig({
+            slack: {
+              ...current.slack,
+              agentIdentity: userId,
+              ...(profile && Object.values(profile).some(Boolean)
+                ? { profile }
+                : {}),
+            },
+          });
+          debug("Slack agent identity saved: %s", userId);
+        }
+      },
+    });
+  } catch (err) {
+    const msg = (err as Error).message || String(err);
+    debug("Slack adapter failed to start: %s", msg);
+    if (msg.includes("invalid_auth")) {
+      debug(
+        "Slack auth failed (invalid_auth). Check appToken/userToken in Settings and reinstall app if needed.",
+      );
+    }
+    // Keep worker alive so credentials can be fixed and reloaded.
+    return;
+  }
 
   if (responseDeliverySubscriber) {
     await responseDeliverySubscriber.close();
@@ -65,11 +80,30 @@ async function startAdapter(): Promise<void> {
             channelId?: string;
             threadTs?: string;
             text?: string;
+            typing?: "start" | "stop";
+            status?: { label?: string; done?: boolean };
           };
           if (payload.channel !== "slack") return;
           const channelId = payload.channelId;
+          if (typeof channelId !== "string") return;
+          const connectAs = getChannelsConfig().slack?.connectAs ?? "bot";
+          if (connectAs === "bot" && payload.status && payload.threadTs) {
+            const label =
+              payload.status.done === true
+                ? ""
+                : String(payload.status.label ?? "");
+            setAssistantThreadStatus(channelId, payload.threadTs, label).catch(
+              (err) => {
+                debug(
+                  "response_delivery slack assistant status error: %o",
+                  err,
+                );
+              },
+            );
+            return;
+          }
           const text = payload.text;
-          if (typeof channelId !== "string" || typeof text !== "string") return;
+          if (typeof text !== "string") return;
           sendMessageToChannel(channelId, text, payload.threadTs).catch(
             (err) => {
               debug("response_delivery slack send error: %o", err);

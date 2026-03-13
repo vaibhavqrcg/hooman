@@ -15,6 +15,7 @@ import { App } from "@slack/bolt";
 const debug = createDebug("hooman:slack-adapter");
 
 let slackApp: App | null = null;
+let assistantStatusSupported = true;
 
 import { applyFilter } from "./shared.js";
 
@@ -242,6 +243,7 @@ export async function startSlackAdapter(
       channel: "slack",
       channelId,
       messageTs,
+      connectAs: config.connectAs ?? "bot",
       senderId: userIdFromSlack,
       destinationType,
       directness,
@@ -307,4 +309,34 @@ export async function sendMessageToChannel(
     text,
     ...(threadTs ? { thread_ts: threadTs } : {}),
   });
+}
+
+/** Set Slack Assistant thread status label (bot-mode only). */
+export async function setAssistantThreadStatus(
+  channelId: string,
+  threadTs: string,
+  label: string,
+): Promise<void> {
+  if (!assistantStatusSupported) return;
+  const app = slackApp;
+  if (!app?.client) {
+    throw new Error("Slack adapter not started or client unavailable");
+  }
+  try {
+    await app.client.apiCall("assistant.threads.setStatus", {
+      channel_id: channelId,
+      thread_ts: threadTs,
+      status: label,
+    });
+  } catch (err) {
+    const data = (err as { data?: { error?: string } }).data;
+    if (data?.error === "unknown_method") {
+      assistantStatusSupported = false;
+      debug(
+        "Slack assistant.threads.setStatus unsupported for this app/token; disabling assistant status calls",
+      );
+      return;
+    }
+    throw err;
+  }
 }
