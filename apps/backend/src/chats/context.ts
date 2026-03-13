@@ -7,7 +7,7 @@ import {
   createSQLiteStorageAdapter,
   type SummaryRequest,
 } from "@one710/recollect";
-import type { ModelMessage } from "ai";
+import type { AgentInputItem } from "@openai/agents";
 import type { ChatHistoryStore } from "./chat-history.js";
 import { getConfig } from "../config.js";
 import { getHoomanModel } from "../agents/model-provider.js";
@@ -45,6 +45,17 @@ function createSummarizer(
 
 /** Render a message as text for the summarizer (role + content snapshot). */
 function renderMessage(msg: Record<string, unknown>): string {
+  const itemType = typeof msg.type === "string" ? msg.type : "";
+  if (itemType === "function_call") {
+    return `[assistant]: [tool: ${String(msg.name ?? "?")}]`;
+  }
+  if (itemType === "function_call_result") {
+    return `[tool]: [tool result: ${String(msg.name ?? "?")}]`;
+  }
+  if (itemType === "reasoning") {
+    return "[assistant]: [reasoning]";
+  }
+
   const role = msg.role ?? "unknown";
   const content = msg.content;
   if (typeof content === "string") return `[${role}]: ${content}`;
@@ -75,10 +86,13 @@ export interface ContextStore {
       approvalRequest?: { toolName: string; argsPreview: string };
     },
   ): Promise<void>;
-  /** Persist a full turn as AI SDK messages (includes tool calls, tool results, etc.). Use when available. Call addTurnToChatHistory too so the UI has the turn. */
-  addTurnToAgentThread(userId: string, messages: ModelMessage[]): Promise<void>;
-  /** Token-limited thread for the agent (from recollect; full AI SDK messages when stored with addTurnToAgentThread). */
-  getThreadForAgent(userId: string): Promise<ModelMessage[]>;
+  /** Persist a full turn as OpenAI Agents items (includes function calls/results). */
+  addTurnToAgentThread(
+    userId: string,
+    messages: AgentInputItem[],
+  ): Promise<void>;
+  /** Token-limited thread for the agent (from recollect; OpenAI Agents items). */
+  getThreadForAgent(userId: string): Promise<AgentInputItem[]>;
   /** Clear all messages for the user (chat history and recollect). */
   clearAll(userId: string): Promise<void>;
 }
@@ -141,7 +155,7 @@ export async function createContext(
 
     async addTurnToAgentThread(
       userId: string,
-      messages: ModelMessage[],
+      messages: AgentInputItem[],
     ): Promise<void> {
       if (messages.length === 0) return;
       await memory.addMessages(
@@ -150,9 +164,9 @@ export async function createContext(
       );
     },
 
-    async getThreadForAgent(userId: string): Promise<ModelMessage[]> {
+    async getThreadForAgent(userId: string): Promise<AgentInputItem[]> {
       const messages = await memory.getMessages(userId);
-      return messages.map((msg) => msg as ModelMessage);
+      return messages.map((msg) => msg as AgentInputItem);
     },
 
     async clearAll(userId: string): Promise<void> {

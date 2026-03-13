@@ -1,7 +1,7 @@
 /**
  * Shared utilities for the chat handler: runAgent, dispatch, approval helpers.
  */
-import type { ModelMessage } from "ai";
+import type { AgentInputItem } from "@openai/agents";
 import type {
   HoomanRunner,
   RunChatOptions,
@@ -28,7 +28,7 @@ export class ChatTimeoutError extends Error {
 
 export interface RunAgentFn {
   (
-    history: ModelMessage[],
+    history: AgentInputItem[],
     text: string,
     runOptions?: RunChatOptions,
     timeoutMs?: number | null,

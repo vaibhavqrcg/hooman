@@ -1,7 +1,14 @@
 import { randomUUID } from "crypto";
 import createDebug from "debug";
-import { auth, createMCPClient } from "@ai-sdk/mcp";
-import { Experimental_StdioMCPTransport } from "@ai-sdk/mcp/mcp-stdio";
+import { auth } from "@ai-sdk/mcp";
+import {
+  MCPServerStdio,
+  MCPServerStreamableHttp,
+  connectMcpServers,
+  createMCPToolStaticFilter,
+  type MCPServer,
+  type MCPServers,
+} from "@openai/agents";
 import type { MCPConnectionsStore } from "./connections-store.js";
 import {
   createOAuthProvider,
@@ -14,50 +21,13 @@ import {
   type MCPConnectionStdio,
 } from "../../types.js";
 import { env } from "../../env.js";
-import { filterToolNames } from "../../utils/tool-filter.js";
 
 const debug = createDebug("hooman:mcp-service");
 const DEFAULT_MCP_CWD = env.MCP_STDIO_DEFAULT_CWD;
-
-/** Wraps a stdio transport to log open/close events. */
-function wrapStdioTransportWithLogging(
-  inner: InstanceType<typeof Experimental_StdioMCPTransport>,
-  id: string,
-) {
-  return {
-    async start() {
-      await inner.start();
-      debug("MCP server opened: %s", id);
-    },
-    async close() {
-      return inner.close();
-    },
-    async send(message: Parameters<typeof inner.send>[0]) {
-      return inner.send(message);
-    },
-    get onmessage() {
-      return inner.onmessage;
-    },
-    set onmessage(fn: typeof inner.onmessage) {
-      inner.onmessage = fn;
-    },
-    get onerror() {
-      return inner.onerror;
-    },
-    set onerror(fn: typeof inner.onerror) {
-      inner.onerror = fn;
-    },
-    get onclose() {
-      return inner.onclose;
-    },
-    set onclose(fn: (() => void) | undefined) {
-      inner.onclose = () => {
-        debug("MCP server closed: %s", id);
-        fn?.();
-      };
-    },
-  };
-}
+const DEFAULT_MCP_SERVER_TIMEOUT_MS = Math.max(
+  10_000,
+  Math.min(env.MCP_CONNECT_TIMEOUT_MS, 120_000),
+);
 
 /**
  * Converts MCP CallToolResult ({ content: [...] }) to AI SDK ToolResultOutput format.
@@ -101,102 +71,104 @@ export function mcpResultToToolResultOutput(result: unknown): {
   return { type: "json", value: result };
 }
 
-export type McpClientEntry = {
-  client: Awaited<ReturnType<typeof createMCPClient>>;
+export type McpServerEntry = {
   id: string;
+  connectionName: string;
+  connection: MCPConnection;
+  server: MCPServer;
 };
 
-export interface CreateMcpClientsOptions {
-  mcpConnectionsStore?: MCPConnectionsStore;
+export interface CreateMcpServersOptions {
+  connectTimeoutMs?: number | null;
+  closeTimeoutMs?: number | null;
 }
 
-/**
- * Create MCP clients from a list of connections. Failed connections are skipped (logged at debug).
- */
-export async function createMcpClients(
+function toToolFilter(c: MCPConnection) {
+  return createMCPToolStaticFilter({
+    allowed: c.allowedToolNames,
+    blocked: c.blockedToolNames,
+  });
+}
+
+function createServerForConnection(c: MCPConnection): MCPServer {
+  if (c.type === "stdio") {
+    const stdio = c as MCPConnectionStdio;
+    return new MCPServerStdio({
+      name: c.id,
+      command: stdio.command,
+      args: Array.isArray(stdio.args) ? stdio.args : [],
+      env: stdio.env,
+      cwd: stdio.cwd?.trim() || DEFAULT_MCP_CWD,
+      timeout: DEFAULT_MCP_SERVER_TIMEOUT_MS,
+      toolFilter: toToolFilter(c),
+    });
+  }
+
+  if (c.type === "streamable_http") {
+    const http = c as MCPConnectionStreamableHttp;
+    return new MCPServerStreamableHttp({
+      name: c.id,
+      url: http.url,
+      requestInit: http.headers ? { headers: http.headers } : undefined,
+      timeout: http.timeout_seconds
+        ? Math.max(1, http.timeout_seconds) * 1000
+        : DEFAULT_MCP_SERVER_TIMEOUT_MS,
+      cacheToolsList: http.cache_tools_list ?? true,
+      toolFilter: toToolFilter(c),
+    });
+  }
+
+  const hosted = c as MCPConnectionHosted;
+  return new MCPServerStreamableHttp({
+    name: c.id,
+    url: hosted.server_url,
+    requestInit: hosted.headers ? { headers: hosted.headers } : undefined,
+    timeout: DEFAULT_MCP_SERVER_TIMEOUT_MS,
+    cacheToolsList: true,
+    toolFilter: toToolFilter(c),
+  });
+}
+
+export async function createConnectedMcpServers(
   connections: MCPConnection[],
-  options?: CreateMcpClientsOptions,
-): Promise<McpClientEntry[]> {
-  const clients: McpClientEntry[] = [];
-  for (const c of connections) {
-    try {
-      if (c.type === "stdio") {
-        const stdio = c as MCPConnectionStdio;
-        const hasArgs = Array.isArray(stdio.args) && stdio.args.length > 0;
-        debug(
-          "Connecting to Stdio MCP: %s (command: %s, args: %j)",
-          c.id,
-          stdio.command,
-          stdio.args,
-        );
-        const inner = new Experimental_StdioMCPTransport({
-          command: stdio.command,
-          args: hasArgs ? stdio.args : [],
-          env: stdio.env,
-          cwd: stdio.cwd?.trim() || DEFAULT_MCP_CWD,
-        });
-        const transport = wrapStdioTransportWithLogging(inner, c.id);
-        const client = await createMCPClient({ transport });
-        debug("Connected to %s", c.id);
-        clients.push({ client, id: c.id });
-      } else if (c.type === "streamable_http") {
-        const http = c as MCPConnectionStreamableHttp;
-        const hasOAuth =
-          http.oauth?.redirect_uri && options?.mcpConnectionsStore;
-        debug(
-          "Connecting to HTTP MCP: %s (url: %s, headers: %j)",
-          c.id,
-          http.url,
-          http.headers,
-        );
-        const client = await createMCPClient({
-          transport: {
-            type: "http",
-            url: http.url,
-            headers: http.headers,
-            ...(hasOAuth && {
-              authProvider: createOAuthProvider(
-                c.id,
-                options.mcpConnectionsStore!,
-                http,
-              ),
-            }),
-          },
-        });
-        debug("Connected to %s", c.id);
-        clients.push({ client, id: c.id });
-      } else if (c.type === "hosted") {
-        const hosted = c as MCPConnectionHosted;
-        const hasOAuth =
-          hosted.oauth?.redirect_uri && options?.mcpConnectionsStore;
-        debug(
-          "Connecting to Hosted MCP: %s (server_url: %s, headers: %j)",
-          c.id,
-          hosted.server_url,
-          hosted.headers,
-        );
-        const client = await createMCPClient({
-          transport: {
-            type: "http",
-            url: hosted.server_url,
-            headers: hosted.headers,
-            ...(hasOAuth && {
-              authProvider: createOAuthProvider(
-                c.id,
-                options.mcpConnectionsStore!,
-                hosted,
-              ),
-            }),
-          },
-        });
-        debug("Connected to %s", c.id);
-        clients.push({ client, id: c.id });
-      }
-    } catch (err) {
-      debug("MCP connection %s failed to connect: %o", c.id, err);
+  options?: CreateMcpServersOptions,
+): Promise<{
+  connected: MCPServers;
+  entries: McpServerEntry[];
+  activeEntries: McpServerEntry[];
+}> {
+  const entries: McpServerEntry[] = connections.map((c) => ({
+    id: c.id,
+    connectionName:
+      c.type === "hosted"
+        ? (c as MCPConnectionHosted).server_label || c.id
+        : c.name || c.id,
+    connection: c,
+    server: createServerForConnection(c),
+  }));
+
+  const connected = await connectMcpServers(
+    entries.map((e) => e.server),
+    {
+      connectInParallel: true,
+      ...(options?.connectTimeoutMs !== undefined
+        ? { connectTimeoutMs: options.connectTimeoutMs }
+        : {}),
+      ...(options?.closeTimeoutMs !== undefined
+        ? { closeTimeoutMs: options.closeTimeoutMs }
+        : {}),
+    },
+  );
+
+  if (connected.failed.length > 0) {
+    for (const [server, error] of connected.errors) {
+      debug("MCP server %s failed to connect: %s", server.name, error.message);
     }
   }
-  return clients;
+
+  const activeSet = new Set(connected.active);
+  const activeEntries = entries.filter((e) => activeSet.has(e.server));
+  return { connected, entries, activeEntries };
 }
 
 /** Some APIs (e.g. AWS Bedrock) limit tool names to 64 chars. Prefix with short connection id and truncate if needed. */
@@ -213,16 +185,22 @@ export type McpDiscoveredTool = {
 };
 
 export interface ClientsToToolsResult {
-  prefixedTools: Record<string, unknown>;
+  prefixedTools: Record<
+    string,
+    {
+      description?: string;
+      inputSchema?: unknown;
+      execute: (args: unknown) => Promise<unknown>;
+    }
+  >;
   tools: McpDiscoveredTool[];
 }
 
 /**
  * Build a tools map and discovered-tools list from MCP clients. Failed client.tools() are skipped (logged at debug).
  */
-export async function clientsToTools(
-  clients: McpClientEntry[],
-  connections: MCPConnection[],
+export async function serversToTools(
+  servers: McpServerEntry[],
   options?: {
     maxToolNameLen?: number;
     shortConnIdLen?: number;
@@ -230,42 +208,63 @@ export async function clientsToTools(
 ): Promise<ClientsToToolsResult> {
   const maxToolNameLen = options?.maxToolNameLen ?? DEFAULT_MAX_TOOL_NAME_LEN;
   const shortConnIdLen = options?.shortConnIdLen ?? DEFAULT_SHORT_CONN_ID_LEN;
-  const prefixedTools: Record<string, unknown> = {};
+  const prefixedTools: Record<
+    string,
+    {
+      description?: string;
+      inputSchema?: unknown;
+      execute: (args: unknown) => Promise<unknown>;
+    }
+  > = {};
   const tools: McpDiscoveredTool[] = [];
 
-  for (const { client, id } of clients) {
+  for (const { id, server, connectionName, connection } of servers) {
     try {
-      const toolSet = await client.tools();
-      const toolNames = Object.keys(toolSet);
-      const conn = connections.find((c) => c.id === id);
-      const connName = (conn as { name?: string })?.name || conn?.id || id;
-      const filtered = filterToolNames(toolNames, conn?.tool_filter);
+      const listed = await server.listTools();
+      const allowedSet = connection.allowedToolNames?.length
+        ? new Set(connection.allowedToolNames)
+        : null;
+      const blockedSet = new Set(connection.blockedToolNames ?? []);
+      const filtered = listed.filter((t) => {
+        if (blockedSet.has(t.name)) return false;
+        if (allowedSet && !allowedSet.has(t.name)) return false;
+        return true;
+      });
       debug(
-        "MCP client %s tool discovery: %d tools found, %d after filter (%j)",
+        "MCP server %s tool discovery: %d tools found, %d after filter",
         id,
-        toolNames.length,
+        listed.length,
         filtered.length,
-        filtered,
       );
       const shortId = id.replace(/-/g, "").slice(0, shortConnIdLen);
       const maxNameLen = maxToolNameLen - shortId.length - 1;
-      const allowed = new Set(filtered);
-      for (const [name, t] of Object.entries(toolSet)) {
-        if (!allowed.has(name)) continue;
+      for (const t of filtered) {
+        const name = t.name;
         const safeName =
           name.length <= maxNameLen ? name : name.slice(0, maxNameLen);
         const prefixed = `${shortId}_${safeName}`;
-        prefixedTools[prefixed] = t;
+        prefixedTools[prefixed] = {
+          description: t.description,
+          inputSchema: t.inputSchema,
+          execute: async (args: unknown) => {
+            const payload =
+              args && typeof args === "object"
+                ? (args as Record<string, unknown>)
+                : {};
+            const content = await server.callTool(name, payload);
+            return { content };
+          },
+        };
         tools.push({
           id: `${id}/${name}`,
           name,
-          description: (t as { description?: string }).description,
+          description: t.description,
           connectionId: id,
-          connectionName: connName,
+          connectionName,
         });
       }
     } catch (err) {
-      debug("MCP client %s tools() failed: %o", id, err);
+      debug("MCP server %s listTools() failed: %o", id, err);
     }
   }
 
@@ -321,10 +320,12 @@ export function createMcpService(store: MCPConnectionsStore): McpService {
           type: "hosted",
           server_label: body.server_label ?? "",
           server_url: serverUrl,
-          tool_filter:
-            typeof body.tool_filter === "string"
-              ? body.tool_filter.trim() || undefined
-              : undefined,
+          allowedToolNames: Array.isArray(body.allowedToolNames)
+            ? body.allowedToolNames.map(String).filter(Boolean)
+            : undefined,
+          blockedToolNames: Array.isArray(body.blockedToolNames)
+            ? body.blockedToolNames.map(String).filter(Boolean)
+            : undefined,
           headers: body.headers,
           oauth: body.oauth,
           enabled: body.enabled !== false,
@@ -336,10 +337,12 @@ export function createMcpService(store: MCPConnectionsStore): McpService {
           type: "streamable_http",
           name: body.name ?? "",
           url: body.url ?? "",
-          tool_filter:
-            typeof body.tool_filter === "string"
-              ? body.tool_filter.trim() || undefined
-              : undefined,
+          allowedToolNames: Array.isArray(body.allowedToolNames)
+            ? body.allowedToolNames.map(String).filter(Boolean)
+            : undefined,
+          blockedToolNames: Array.isArray(body.blockedToolNames)
+            ? body.blockedToolNames.map(String).filter(Boolean)
+            : undefined,
           headers: body.headers,
           timeout_seconds: body.timeout_seconds,
           cache_tools_list: body.cache_tools_list ?? true,
@@ -355,10 +358,12 @@ export function createMcpService(store: MCPConnectionsStore): McpService {
           name: body.name ?? "",
           command: body.command ?? "",
           args: Array.isArray(body.args) ? body.args : [],
-          tool_filter:
-            typeof body.tool_filter === "string"
-              ? body.tool_filter.trim() || undefined
-              : undefined,
+          allowedToolNames: Array.isArray(body.allowedToolNames)
+            ? body.allowedToolNames.map(String).filter(Boolean)
+            : undefined,
+          blockedToolNames: Array.isArray(body.blockedToolNames)
+            ? body.blockedToolNames.map(String).filter(Boolean)
+            : undefined,
           env:
             body.env && typeof body.env === "object"
               ? (body.env as Record<string, string>)

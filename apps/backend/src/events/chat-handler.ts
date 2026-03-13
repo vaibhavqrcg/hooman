@@ -11,7 +11,7 @@ import type {
   RunChatOptions,
   RunChatResult,
 } from "../agents/hooman-runner.js";
-import type { ModelMessage } from "ai";
+import type { AgentInputItem } from "@openai/agents";
 import type { ChannelMeta, NormalizedMessagePayload } from "../types.js";
 import type { PendingApproval } from "../approval/approval-store.js";
 import {
@@ -27,7 +27,6 @@ import {
 } from "../approval/approval-llm.js";
 import { parseConfirmationReply } from "../approval/confirmation.js";
 import type { ConfirmationResult } from "../approval/confirmation.js";
-import { mcpResultToToolResultOutput } from "../capabilities/mcp/mcp-service.js";
 import type { ToolSettingsStore } from "../capabilities/mcp/tool-settings-store.js";
 import { getConfig } from "../config.js";
 import {
@@ -47,55 +46,41 @@ interface ToolCallFullInfo {
   toolArgs: unknown;
 }
 
-/** Collect all tool calls from assistant messages (content parts with type tool-call). */
-function collectToolCalls(thread: ModelMessage[]): ToolCallFullInfo[] {
+/** Collect all tool calls from OpenAI agent history items (function_call). */
+function collectToolCalls(thread: AgentInputItem[]): ToolCallFullInfo[] {
   const out: ToolCallFullInfo[] = [];
-  for (const msg of thread) {
-    if (msg.role !== "assistant") continue;
-    const content = msg.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as Array<{
-      type?: string;
-      toolCallId?: string;
-      id?: string;
-      toolName?: string;
-      name?: string;
-      input?: unknown;
-      args?: unknown;
-    }>) {
-      if (part?.type === "tool-call" || part?.type === "tool_call") {
-        out.push({
-          toolCallId: part.toolCallId ?? part.id ?? `call_${Date.now()}`,
-          toolName: (part.toolName ?? part.name ?? "unknown") as string,
-          toolArgs: part.input ?? part.args ?? {},
-        });
+  for (const item of thread as Array<Record<string, unknown>>) {
+    if (item.type !== "function_call") continue;
+    let toolArgs: unknown = {};
+    if (typeof item.arguments === "string" && item.arguments.length > 0) {
+      try {
+        toolArgs = JSON.parse(String(item.arguments));
+      } catch {
+        toolArgs = {};
       }
     }
+    out.push({
+      toolCallId: String(item.callId ?? `call_${Date.now()}`),
+      toolName: String(item.name ?? "unknown"),
+      toolArgs,
+    });
   }
   return out;
 }
 
 /** Collect tool call IDs that already have results in the thread. */
-function getToolCallIdsWithResults(thread: ModelMessage[]): Set<string> {
+function getToolCallIdsWithResults(thread: AgentInputItem[]): Set<string> {
   const ids = new Set<string>();
-  for (const msg of thread) {
-    if (msg.role !== "tool") continue;
-    const content = msg.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as Array<{
-      type?: string;
-      toolCallId?: string;
-    }>) {
-      if (part?.type === "tool-result" && part.toolCallId)
-        ids.add(part.toolCallId);
-    }
+  for (const item of thread as Array<Record<string, unknown>>) {
+    if (item.type !== "function_call_result") continue;
+    if (item.callId) ids.add(String(item.callId));
   }
   return ids;
 }
 
 /** First tool call that doesn't have a result yet (next to ask approval for). */
 function getNextToolCallNeedingApproval(
-  thread: ModelMessage[],
+  thread: AgentInputItem[],
 ): ToolCallFullInfo | null {
   const withResults = getToolCallIdsWithResults(thread);
   for (const tc of collectToolCalls(thread)) {
@@ -349,28 +334,21 @@ async function handleApprovalReject(
   } = ctx;
   const { context, runAgent } = deps;
 
-  let thread: ModelMessage[];
+  let thread: AgentInputItem[];
   try {
-    thread = JSON.parse(consumed.threadSnapshotJson) as ModelMessage[];
+    thread = JSON.parse(consumed.threadSnapshotJson) as AgentInputItem[];
   } catch {
     thread = [];
   }
   const deniedToolCallId =
     (consumed as { toolCallId?: string }).toolCallId ?? `call_${Date.now()}`;
-  const deniedOutput = mcpResultToToolResultOutput({
-    content: [{ type: "text", text: "Execution denied by user." }],
-  });
   const toolResultMessage = {
-    role: "tool" as const,
-    content: [
-      {
-        type: "tool-result" as const,
-        toolCallId: deniedToolCallId,
-        toolName: consumed.toolName,
-        output: deniedOutput,
-      },
-    ],
-  } as ModelMessage;
+    type: "function_call_result",
+    callId: deniedToolCallId,
+    name: consumed.toolName,
+    status: "completed",
+    output: "Execution denied by user.",
+  } as AgentInputItem;
   thread.push(toolResultMessage);
 
   const nextTool = getNextToolCallNeedingApproval(thread);
@@ -407,10 +385,7 @@ async function handleApprovalReject(
         result.needsApproval.threadSnapshot.slice(histLen);
       const newMessagesOnly = turnFromHistory.slice(2, -1);
       if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(
-          payload.userId,
-          newMessagesOnly as ModelMessage[],
-        );
+        await context.addTurnToAgentThread(payload.userId, newMessagesOnly);
       }
       await handleNeedsApproval(deps, {
         event,
@@ -445,14 +420,22 @@ async function handleApprovalReject(
     const toolResultsAndRun = [
       ...turnFromHistory.slice(2),
       ...(result.messages ?? []),
-    ] as ModelMessage[];
+    ] as AgentInputItem[];
     if (toolResultsAndRun.length) {
       await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
-        { role: "user", content: payload.text },
-        { role: "assistant", content: assistantText },
-      ] as ModelMessage[]);
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: payload.text }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: assistantText }],
+        },
+      ] as AgentInputItem[]);
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -534,9 +517,9 @@ async function handleApprovalConfirm(
   );
 
   try {
-    let thread: ModelMessage[];
+    let thread: AgentInputItem[];
     try {
-      thread = JSON.parse(consumed.threadSnapshotJson) as ModelMessage[];
+      thread = JSON.parse(consumed.threadSnapshotJson) as AgentInputItem[];
     } catch {
       thread = [];
     }
@@ -547,18 +530,16 @@ async function handleApprovalConfirm(
     );
     const executedToolCallId =
       (consumed as { toolCallId?: string }).toolCallId ?? `call_${Date.now()}`;
-    const toolOutput = mcpResultToToolResultOutput(toolResult);
     const toolResultMessage = {
-      role: "tool" as const,
-      content: [
-        {
-          type: "tool-result" as const,
-          toolCallId: executedToolCallId,
-          toolName: consumed.toolName,
-          output: toolOutput,
-        },
-      ],
-    } as ModelMessage;
+      type: "function_call_result",
+      callId: executedToolCallId,
+      name: consumed.toolName,
+      status: "completed",
+      output:
+        typeof toolResult === "string"
+          ? toolResult
+          : JSON.stringify(toolResult ?? {}),
+    } as AgentInputItem;
     thread.push(toolResultMessage);
 
     const nextTool = getNextToolCallNeedingApproval(thread);
@@ -590,10 +571,7 @@ async function handleApprovalConfirm(
         result.needsApproval.threadSnapshot.slice(histLen);
       const newMessagesOnly = turnFromHistory.slice(2, -1);
       if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(
-          payload.userId,
-          newMessagesOnly as ModelMessage[],
-        );
+        await context.addTurnToAgentThread(payload.userId, newMessagesOnly);
       }
       await handleNeedsApproval(deps, {
         event,
@@ -629,14 +607,22 @@ async function handleApprovalConfirm(
     const toolResultsAndRun = [
       ...turnFromHistory.slice(2), // skip user + assistant; keep all tool results
       ...(result.messages ?? []),
-    ] as ModelMessage[];
+    ] as AgentInputItem[];
     if (toolResultsAndRun.length) {
       await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
-        { role: "user", content: payload.text },
-        { role: "assistant", content: assistantText },
-      ] as ModelMessage[]);
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: payload.text }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: assistantText }],
+        },
+      ] as AgentInputItem[]);
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -677,7 +663,7 @@ async function requestApprovalForTool(
     toolName: string;
     toolArgs: unknown;
     toolCallId: string;
-    thread: ModelMessage[];
+    thread: AgentInputItem[];
     historyLength?: number;
     dispatchResponse: (
       eventId: string,
@@ -934,9 +920,17 @@ async function handleAgentSuccess(
     await context.addTurnToAgentThread(payload.userId, messages);
   } else {
     await context.addTurnToAgentThread(payload.userId, [
-      { role: "user", content: payload.text },
-      { role: "assistant", content: assistantText },
-    ] as ModelMessage[]);
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: payload.text }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: assistantText }],
+      },
+    ] as AgentInputItem[]);
   }
 }
 
@@ -988,7 +982,15 @@ async function handleChatError(
     assistantText,
   );
   await context.addTurnToAgentThread(payload.userId, [
-    { role: "user", content: payload.text },
-    { role: "assistant", content: assistantText },
-  ] as ModelMessage[]);
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: payload.text }],
+    },
+    {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: assistantText }],
+    },
+  ] as AgentInputItem[]);
 }

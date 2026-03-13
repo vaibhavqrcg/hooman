@@ -36,10 +36,12 @@ function payloadToConnection(
       type: "hosted",
       server_label: String(d.server_label ?? ""),
       server_url: String(d.server_url ?? ""),
-      tool_filter:
-        typeof d.tool_filter === "string"
-          ? d.tool_filter.trim() || undefined
-          : undefined,
+      allowedToolNames: Array.isArray(d.allowedToolNames)
+        ? d.allowedToolNames.map(String).filter(Boolean)
+        : undefined,
+      blockedToolNames: Array.isArray(d.blockedToolNames)
+        ? d.blockedToolNames.map(String).filter(Boolean)
+        : undefined,
       headers: d.headers as Record<string, string> | undefined,
       oauth: d.oauth as MCPOAuthConfig | undefined,
       oauth_tokens: d.oauth_tokens as MCPOAuthTokens | undefined,
@@ -58,10 +60,12 @@ function payloadToConnection(
       type: "streamable_http",
       name: String(d.name ?? ""),
       url: String(d.url ?? ""),
-      tool_filter:
-        typeof d.tool_filter === "string"
-          ? d.tool_filter.trim() || undefined
-          : undefined,
+      allowedToolNames: Array.isArray(d.allowedToolNames)
+        ? d.allowedToolNames.map(String).filter(Boolean)
+        : undefined,
+      blockedToolNames: Array.isArray(d.blockedToolNames)
+        ? d.blockedToolNames.map(String).filter(Boolean)
+        : undefined,
       headers: d.headers as Record<string, string> | undefined,
       timeout_seconds: d.timeout_seconds as number | undefined,
       cache_tools_list: d.cache_tools_list as boolean | undefined,
@@ -84,10 +88,12 @@ function payloadToConnection(
       name: String(d.name ?? ""),
       command: String(d.command ?? ""),
       args: Array.isArray(d.args) ? d.args.map(String) : [],
-      tool_filter:
-        typeof d.tool_filter === "string"
-          ? d.tool_filter.trim() || undefined
-          : undefined,
+      allowedToolNames: Array.isArray(d.allowedToolNames)
+        ? d.allowedToolNames.map(String).filter(Boolean)
+        : undefined,
+      blockedToolNames: Array.isArray(d.blockedToolNames)
+        ? d.blockedToolNames.map(String).filter(Boolean)
+        : undefined,
       env:
         d.env && typeof d.env === "object"
           ? (d.env as Record<string, string>)

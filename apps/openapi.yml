@@ -327,9 +327,16 @@ components:
           type: string
         server_url:
           type: string
-        tool_filter:
-          type: string
-          description: "Comma-separated glob patterns, e.g. *, !send_*. Empty = all."
+        allowedToolNames:
+          type: array
+          items:
+            type: string
+          description: "Explicit allowlist for tools. Empty = allow all."
+        blockedToolNames:
+          type: array
+          items:
+            type: string
+          description: "Explicit blocklist for tools."
         headers:
           type: object
           additionalProperties:
@@ -359,8 +366,14 @@ components:
           type: string
         url:
           type: string
-        tool_filter:
-          type: string
+        allowedToolNames:
+          type: array
+          items:
+            type: string
+        blockedToolNames:
+          type: array
+          items:
+            type: string
         headers:
           type: object
           additionalProperties:
@@ -399,8 +412,14 @@ components:
           type: array
           items:
             type: string
-        tool_filter:
-          type: string
+        allowedToolNames:
+          type: array
+          items:
+            type: string
+        blockedToolNames:
+          type: array
+          items:
+            type: string
         env:
           type: object
           additionalProperties:
