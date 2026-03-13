@@ -36,6 +36,7 @@ export function createScheduledTaskHandler(
             .join(", ");
     const text = `Scheduled task: ${payload.intent}. Context: ${contextStr}.`;
     const runOptions: RunChatOptions = {
+      source: "scheduler",
       sessionId: payload.context.userId
         ? String(payload.context.userId)
         : undefined,

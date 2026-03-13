@@ -73,12 +73,30 @@ export function dispatchResponseToChannel(
         skipped: true,
       });
     }
+    if (source === "web") {
+      return publishResponse({
+        channel: "web",
+        eventId,
+        skipped: true,
+      });
+    }
     return;
   }
 
   if (source === "api") {
     return publishResponse({
       channel: "api",
+      eventId,
+      message: {
+        role: "assistant",
+        text: assistantText,
+        ...(approvalRequest ? { approvalRequest } : {}),
+      },
+    });
+  }
+  if (source === "web") {
+    return publishResponse({
+      channel: "web",
       eventId,
       message: {
         role: "assistant",

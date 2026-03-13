@@ -108,12 +108,26 @@ export interface ChatHandlerDeps {
 
 function publishApiProgress(
   publishResponse: ChatHandlerDeps["publishResponse"],
+  source: string,
   eventId: string,
   stage: import("../types.js").ChatProgressStage,
   delta?: string,
 ): void {
+  if (source !== "api" && source !== "web") return;
+  if (source === "api") {
+    publishResponse({
+      channel: "api",
+      eventId,
+      progress: {
+        stage,
+        ...(typeof delta === "string" && delta.length > 0 ? { delta } : {}),
+        ...(stage === "done" ? { done: true } : {}),
+      },
+    });
+    return;
+  }
   publishResponse({
-    channel: "api",
+    channel: "web",
     eventId,
     progress: {
       stage,
@@ -165,13 +179,13 @@ function createApiRunCallbacks(
   eventId: string,
   source: string,
 ): RunStreamCallbacks | undefined {
-  if (source !== "api") return undefined;
+  if (source !== "api" && source !== "web") return undefined;
   return {
     onStage: async (stage) => {
-      publishApiProgress(publishResponse, eventId, stage);
+      publishApiProgress(publishResponse, source, eventId, stage);
     },
     onTextDelta: async (delta) => {
-      publishApiProgress(publishResponse, eventId, "writing", delta);
+      publishApiProgress(publishResponse, source, eventId, "writing", delta);
     },
   };
 }
@@ -251,6 +265,7 @@ export function createChatHandler(
       channelMeta as ChannelMeta | undefined,
     );
     const runOptions: RunChatOptions = {
+      source: event.source,
       channel: channelMeta as ChannelMeta | undefined,
       attachments: attachmentContents,
       sessionId: userId,
@@ -843,7 +858,9 @@ async function requestApprovalForTool(
     event.source,
     runOptions.channel as ChannelMeta | undefined,
     approvalMessage,
-    event.source === "api" ? approvalRequest : undefined,
+    event.source === "api" || event.source === "web"
+      ? approvalRequest
+      : undefined,
   );
   await context.addTurnToChatHistory(
     payload.userId,
@@ -851,7 +868,10 @@ async function requestApprovalForTool(
     approvalMessage,
     {
       userAttachments: payload.attachments,
-      approvalRequest: event.source === "api" ? approvalRequest : undefined,
+      approvalRequest:
+        event.source === "api" || event.source === "web"
+          ? approvalRequest
+          : undefined,
     },
   );
 }
@@ -956,7 +976,9 @@ async function handleNeedsApproval(
     event.source,
     runOptions.channel as ChannelMeta | undefined,
     approvalMessage,
-    event.source === "api" ? approvalRequest : undefined,
+    event.source === "api" || event.source === "web"
+      ? approvalRequest
+      : undefined,
   );
   await context.addTurnToChatHistory(
     payload.userId,
@@ -964,7 +986,10 @@ async function handleNeedsApproval(
     approvalMessage,
     {
       userAttachments: payload.attachments,
-      approvalRequest: event.source === "api" ? approvalRequest : undefined,
+      approvalRequest:
+        event.source === "api" || event.source === "web"
+          ? approvalRequest
+          : undefined,
     },
   );
 }

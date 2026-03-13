@@ -78,6 +78,7 @@ export interface RunStreamCallbacks {
 }
 
 export interface RunChatOptions {
+  source?: string;
   channel?: ChannelMeta;
   sessionId?: string;
   attachments?: Array<{
@@ -171,7 +172,12 @@ function buildOpenAITools(options: {
               timeoutBehavior: "raise_exception" as const,
             }
           : {}),
-        needsApproval: async () => toolsThatNeedApproval.has(name),
+        needsApproval: async (runContext: unknown) => {
+          const source = (runContext as { context?: { source?: string } })
+            ?.context?.source;
+          if (source === "api" || source === "scheduler") return false;
+          return toolsThatNeedApproval.has(name);
+        },
         async execute(input) {
           debug(
             "Tool call: %s args=%s",
@@ -319,6 +325,7 @@ export async function createHoomanRunner(options: {
       const result = await run(agent, input, {
         maxTurns,
         stream: true,
+        context: { source: options?.source ?? null },
       });
       let lastStage: RunProgressStage | null = null;
       const emitStage = async (stage: RunProgressStage) => {

@@ -1,6 +1,7 @@
 // Events
 export type EventSource =
   | "ui"
+  | "web"
   | "api"
   | "mcp"
   | "scheduler"
@@ -153,6 +154,16 @@ export type ResponseDeliveryPayload =
       };
     }
   | {
+      channel: "web";
+      eventId: string;
+      message: {
+        role: string;
+        text: string;
+        /** For approval requests; frontend uses structure instead of parsing text. */
+        approvalRequest?: { toolName: string; argsPreview: string };
+      };
+    }
+  | {
       channel: "api";
       eventId: string;
       progress: {
@@ -161,7 +172,17 @@ export type ResponseDeliveryPayload =
         done?: boolean;
       };
     }
+  | {
+      channel: "web";
+      eventId: string;
+      progress: {
+        stage: ChatProgressStage;
+        delta?: string;
+        done?: boolean;
+      };
+    }
   | { channel: "api"; eventId: string; skipped: true }
+  | { channel: "web"; eventId: string; skipped: true }
   | { channel: "slack"; channelId: string; threadTs?: string; text: string }
   | {
       channel: "slack";
