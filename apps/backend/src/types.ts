@@ -1,6 +1,7 @@
 // Events
 export type EventSource =
   | "ui"
+  | "web"
   | "api"
   | "mcp"
   | "scheduler"
@@ -115,6 +116,7 @@ export interface SlackChannelMeta extends ChannelMetaBase {
   channelId: string;
   messageTs: string;
   threadTs?: string;
+  connectAs?: SlackConnectAs;
   senderId: string;
   senderName?: string;
   destinationType: "dm" | "channel" | "group";
@@ -131,6 +133,14 @@ export interface SlackChannelMeta extends ChannelMetaBase {
 /** When the model outputs this marker, the dispatcher skips sending a reply to the user (no message to channel; web chat gets chat-skipped). */
 export const HOOMAN_SKIP_MARKER = "[hooman:skip]";
 
+export type ChatProgressStage =
+  | "thinking"
+  | "searching"
+  | "organizing"
+  | "writing"
+  | "awaiting_approval"
+  | "done";
+
 /** Payload published to Redis for response delivery. API emits via Socket.IO; Slack/WhatsApp send via their clients. */
 export type ResponseDeliveryPayload =
   | {
@@ -143,8 +153,47 @@ export type ResponseDeliveryPayload =
         approvalRequest?: { toolName: string; argsPreview: string };
       };
     }
+  | {
+      channel: "web";
+      eventId: string;
+      message: {
+        role: string;
+        text: string;
+        /** For approval requests; frontend uses structure instead of parsing text. */
+        approvalRequest?: { toolName: string; argsPreview: string };
+      };
+    }
+  | {
+      channel: "api";
+      eventId: string;
+      progress: {
+        stage: ChatProgressStage;
+        delta?: string;
+        done?: boolean;
+      };
+    }
+  | {
+      channel: "web";
+      eventId: string;
+      progress: {
+        stage: ChatProgressStage;
+        delta?: string;
+        done?: boolean;
+      };
+    }
   | { channel: "api"; eventId: string; skipped: true }
+  | { channel: "web"; eventId: string; skipped: true }
   | { channel: "slack"; channelId: string; threadTs?: string; text: string }
+  | {
+      channel: "slack";
+      channelId: string;
+      threadTs?: string;
+      status: {
+        stage: ChatProgressStage;
+        label: string;
+        done?: boolean;
+      };
+    }
   | { channel: "whatsapp"; chatId: string; text: string };
 
 /** Redis channel for response delivery (event-queue publishes; API, Slack and WhatsApp workers subscribe). */
@@ -166,7 +215,7 @@ export type ChannelMeta = SlackChannelMeta | WhatsAppChannelMeta;
 
 export interface NormalizedMessagePayload {
   kind: "message";
-  text: string;
+  text: string | string[];
   userId: string;
   /** Resolved attachment content for the agent (name, contentType, data). */
   attachmentContents?: ChatAttachment[];
@@ -344,8 +393,10 @@ export interface MCPConnectionHosted {
   server_label: string;
   /** Public MCP server URL (required). */
   server_url: string;
-  /** Optional comma-separated glob patterns to filter which tools are registered (e.g. *, !send_*). Empty = all. */
-  tool_filter?: string;
+  /** Explicit allowlist for tools. Empty/undefined = allow all (unless blocked below). */
+  allowedToolNames?: string[];
+  /** Explicit blocklist for tools. */
+  blockedToolNames?: string[];
   /** Optional headers (e.g. Bearer token for OAuth). */
   headers?: Record<string, string>;
   /** When set, use OAuth (PKCE, optional DCR) for this connection. */
@@ -366,8 +417,10 @@ export interface MCPConnectionStreamableHttp {
   type: "streamable_http";
   name: string;
   url: string;
-  /** Optional comma-separated glob patterns to filter which tools are registered (e.g. *, !send_*). Empty = all. */
-  tool_filter?: string;
+  /** Explicit allowlist for tools. Empty/undefined = allow all (unless blocked below). */
+  allowedToolNames?: string[];
+  /** Explicit blocklist for tools. */
+  blockedToolNames?: string[];
   headers?: Record<string, string>;
   timeout_seconds?: number;
   cache_tools_list?: boolean;
@@ -391,8 +444,10 @@ export interface MCPConnectionStdio {
   name: string;
   command: string;
   args: string[];
-  /** Optional comma-separated glob patterns to filter which tools are registered (e.g. *, !send_*). Empty = all. */
-  tool_filter?: string;
+  /** Explicit allowlist for tools. Empty/undefined = allow all (unless blocked below). */
+  allowedToolNames?: string[];
+  /** Explicit blocklist for tools. */
+  blockedToolNames?: string[];
   /** Optional env vars for the process. */
   env?: Record<string, string>;
   /** Optional working directory. */

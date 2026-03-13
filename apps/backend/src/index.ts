@@ -171,9 +171,16 @@ async function main() {
   pubsub.subscribe(RESPONSE_DELIVERY_CHANNEL, (raw) => {
     try {
       const payload = JSON.parse(raw) as ResponseDeliveryPayload;
-      if (payload.channel !== "api") return;
+      if (payload.channel !== "api" && payload.channel !== "web") return;
       if ("skipped" in payload && payload.skipped === true) {
         io.emit("chat-skipped", { eventId: payload.eventId });
+        return;
+      }
+      if ("progress" in payload && payload.progress) {
+        io.emit("chat-progress", {
+          eventId: payload.eventId,
+          progress: payload.progress,
+        });
         return;
       }
       if (!("message" in payload)) return;

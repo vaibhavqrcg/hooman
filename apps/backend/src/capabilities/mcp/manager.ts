@@ -4,13 +4,10 @@
  */
 import createDebug from "debug";
 import type { MCPConnectionsStore } from "./connections-store.js";
-import {
-  type McpClientEntry,
-  createMcpClients,
-  clientsToTools,
-} from "./mcp-service.js";
+import { createConnectedMcpServers, serversToTools } from "./mcp-service.js";
 import { getAllDefaultMcpConnections } from "./system-mcps.js";
 import { runWithTimeout } from "../../utils/helpers.js";
+import type { MCPServers } from "@openai/agents";
 
 const debug = createDebug("hooman:mcp-manager");
 
@@ -45,7 +42,7 @@ export type McpToolsResult = {
 
 export class McpManager {
   private cachedResult: McpToolsResult | null = null;
-  private cachedMcpClients: McpClientEntry[] | null = null;
+  private cachedMcpServers: MCPServers | null = null;
   private inFlight: Promise<McpToolsResult> | null = null;
   private readonly connectTimeoutMs: number | null;
   private readonly closeTimeoutMs: number | null;
@@ -97,14 +94,18 @@ export class McpManager {
         "Building MCP tools: requested connections: %j",
         connections.map((c) => c.id),
       );
-      const mcpClients = await createMcpClients(connections, {
-        mcpConnectionsStore: this.mcpConnectionsStore,
-      });
-      const { prefixedTools, tools } = await clientsToTools(
-        mcpClients,
+      const { connected, activeEntries } = await createConnectedMcpServers(
         connections,
+        {
+          connectTimeoutMs: this.connectTimeoutMs,
+          closeTimeoutMs: this.closeTimeoutMs,
+        },
       );
-      this.cachedMcpClients = mcpClients;
+      const { prefixedTools, tools } = await serversToTools(activeEntries, {
+        maxToolNameLen: 64,
+        shortConnIdLen: 8,
+      });
+      this.cachedMcpServers = connected;
       const result: McpToolsResult = {
         agentTools: { ...prefixedTools },
         tools,
@@ -138,40 +139,30 @@ export class McpManager {
    */
   clearCache(): void {
     this.cachedResult = null;
-    this.cachedMcpClients = null;
-    debug("MCP manager cache cleared (clients left open)");
+    debug("MCP manager cache cleared (servers left open)");
   }
 
   /**
    * Closes cached MCP clients and clears cache. Call only on process shutdown.
    */
   async shutdown(): Promise<void> {
-    const clients = this.cachedMcpClients;
+    const servers = this.cachedMcpServers;
     this.cachedResult = null;
-    this.cachedMcpClients = null;
-    if (!clients?.length) {
-      debug("MCP manager shutdown: no cached clients to close");
+    this.cachedMcpServers = null;
+    if (!servers) {
+      debug("MCP manager shutdown: no connected MCP servers to close");
       return;
     }
 
-    debug("MCP manager shutdown: closing %d MCP client(s)", clients.length);
+    debug("MCP manager shutdown: closing MCP server lifecycle");
     const closeError = new Error(
       "MCP session close timed out (closeTimeoutMs).",
     );
     closeError.name = "TimeoutError";
-    const closeAll = async (): Promise<void> => {
-      for (const { client, id } of clients) {
-        try {
-          debug("Closing MCP client: %s", id);
-          await client.close();
-        } catch (e) {
-          debug("MCP client %s close error: %o", id, e);
-        }
-      }
-    };
+    const closeAll = async (): Promise<void> => servers.close();
     try {
       await runWithTimeout(() => closeAll(), this.closeTimeoutMs, closeError);
-      debug("MCP manager disconnect: clients closed");
+      debug("MCP manager disconnect: servers closed");
     } catch (err) {
       debug("MCP manager shutdown close error: %o", err);
     }

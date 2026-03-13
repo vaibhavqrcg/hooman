@@ -116,7 +116,7 @@ export function createChatService(
       const eventId = randomUUID();
       await enqueue(
         {
-          source: "api",
+          source: "web",
           type: "message.sent",
           payload: {
             text,

@@ -66,6 +66,8 @@ export const McpConnections = forwardRef<
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<MCPConnection>>({});
   const [argsRaw, setArgsRaw] = useState("");
+  const [allowedToolsRaw, setAllowedToolsRaw] = useState("");
+  const [blockedToolsRaw, setBlockedToolsRaw] = useState("");
   const [envEntries, setEnvEntries] = useState<
     { key: string; value: string }[]
   >([]);
@@ -164,16 +166,21 @@ export const McpConnections = forwardRef<
     setOAuthClientSecret("");
     setOAuthScope("");
     setOAuthAuthServerUrl("");
+    setAllowedToolsRaw("");
+    setBlockedToolsRaw("");
     setForm({
       type: "hosted",
       server_label: "",
-      tool_filter: "",
+      allowedToolNames: [],
+      blockedToolNames: [],
     });
   }
 
   function startEdit(c: MCPConnection) {
     setEditing(c.id);
     setForm({ ...c });
+    setAllowedToolsRaw((c.allowedToolNames ?? []).join(", "));
+    setBlockedToolsRaw((c.blockedToolNames ?? []).join(", "));
     if (c.type === "stdio") {
       setArgsRaw(Array.isArray(c.args) ? c.args.join(", ") : "");
       setEnvEntries(
@@ -221,6 +228,14 @@ export const McpConnections = forwardRef<
     setError(null);
     try {
       const base = { id: form.id || crypto.randomUUID(), type: form.type };
+      const allowedToolNames = allowedToolsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const blockedToolNames = blockedToolsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
       if (
         (form.type === "hosted" || form.type === "streamable_http") &&
         oauthEnabled &&
@@ -248,7 +263,10 @@ export const McpConnections = forwardRef<
           type: "hosted",
           server_label: form.server_label ?? "",
           server_url: form.server_url.trim(),
-          tool_filter: form.tool_filter?.trim() || undefined,
+          allowedToolNames:
+            allowedToolNames.length > 0 ? allowedToolNames : undefined,
+          blockedToolNames:
+            blockedToolNames.length > 0 ? blockedToolNames : undefined,
           headers,
           ...(oauthEnabled && {
             oauth: {
@@ -286,7 +304,10 @@ export const McpConnections = forwardRef<
           type: "streamable_http",
           name: form.name ?? "",
           url: form.url ?? "",
-          tool_filter: form.tool_filter?.trim() || undefined,
+          allowedToolNames:
+            allowedToolNames.length > 0 ? allowedToolNames : undefined,
+          blockedToolNames:
+            blockedToolNames.length > 0 ? blockedToolNames : undefined,
           headers,
           timeout_seconds: form.timeout_seconds,
           cache_tools_list: form.cache_tools_list ?? true,
@@ -332,7 +353,10 @@ export const McpConnections = forwardRef<
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean),
-          tool_filter: form.tool_filter?.trim() || undefined,
+          allowedToolNames:
+            allowedToolNames.length > 0 ? allowedToolNames : undefined,
+          blockedToolNames:
+            blockedToolNames.length > 0 ? blockedToolNames : undefined,
           ...(Object.keys(env ?? {}).length > 0 ? { env } : {}),
           ...(form.cwd?.trim() ? { cwd: form.cwd.trim() } : {}),
           ...(editing !== "new" && { enabled: form.enabled !== false }),
@@ -416,6 +440,8 @@ export const McpConnections = forwardRef<
             value={form.type ?? "hosted"}
             options={CONNECTION_TYPE_OPTIONS}
             onChange={(type) => {
+              setAllowedToolsRaw("");
+              setBlockedToolsRaw("");
               if (type === "stdio") {
                 setArgsRaw("");
                 setEnvEntries([]);
@@ -431,7 +457,8 @@ export const McpConnections = forwardRef<
               setForm((f) => ({
                 ...f,
                 type,
-                tool_filter: "",
+                allowedToolNames: [],
+                blockedToolNames: [],
                 ...(type === "hosted"
                   ? { server_label: "" }
                   : type === "streamable_http"
@@ -855,17 +882,17 @@ export const McpConnections = forwardRef<
           {form.type && (
             <>
               <Input
-                label="Tool filter"
-                placeholder="e.g. *, !send_* (empty = all tools)"
-                value={form.tool_filter ?? ""}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, tool_filter: e.target.value }))
-                }
+                label="Allowed tool names"
+                placeholder="Comma-separated; empty = allow all"
+                value={allowedToolsRaw}
+                onChange={(e) => setAllowedToolsRaw(e.target.value)}
               />
-              <p className="text-xs text-hooman-muted">
-                Comma-separated glob patterns. Use ! to exclude (e.g. *,
-                !send_*). Empty = all tools.
-              </p>
+              <Input
+                label="Blocked tool names"
+                placeholder="Comma-separated names to block"
+                value={blockedToolsRaw}
+                onChange={(e) => setBlockedToolsRaw(e.target.value)}
+              />
             </>
           )}
         </div>

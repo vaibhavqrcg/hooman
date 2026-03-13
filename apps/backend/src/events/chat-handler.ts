@@ -10,9 +10,14 @@ import type {
   HoomanRunner,
   RunChatOptions,
   RunChatResult,
+  RunStreamCallbacks,
 } from "../agents/hooman-runner.js";
-import type { ModelMessage } from "ai";
-import type { ChannelMeta, NormalizedMessagePayload } from "../types.js";
+import type { AgentInputItem } from "@openai/agents";
+import type {
+  ChannelMeta,
+  NormalizedMessagePayload,
+  ChatProgressStage,
+} from "../types.js";
 import type { PendingApproval } from "../approval/approval-store.js";
 import {
   getPending,
@@ -27,7 +32,6 @@ import {
 } from "../approval/approval-llm.js";
 import { parseConfirmationReply } from "../approval/confirmation.js";
 import type { ConfirmationResult } from "../approval/confirmation.js";
-import { mcpResultToToolResultOutput } from "../capabilities/mcp/mcp-service.js";
 import type { ToolSettingsStore } from "../capabilities/mcp/tool-settings-store.js";
 import { getConfig } from "../config.js";
 import {
@@ -47,55 +51,60 @@ interface ToolCallFullInfo {
   toolArgs: unknown;
 }
 
-/** Collect all tool calls from assistant messages (content parts with type tool-call). */
-function collectToolCalls(thread: ModelMessage[]): ToolCallFullInfo[] {
+function toTextParts(text: string | string[]): string[] {
+  if (Array.isArray(text)) {
+    return text
+      .map((t) => (typeof t === "string" ? t.trim() : ""))
+      .filter((t) => t.length > 0);
+  }
+  const t = (text ?? "").trim();
+  return t ? [t] : [];
+}
+
+function toLatestText(text: string | string[]): string {
+  const parts = toTextParts(text);
+  return parts[parts.length - 1] ?? "";
+}
+
+function toCombinedText(text: string | string[]): string {
+  return toTextParts(text).join("\n");
+}
+
+/** Collect all tool calls from OpenAI agent history items (function_call). */
+function collectToolCalls(thread: AgentInputItem[]): ToolCallFullInfo[] {
   const out: ToolCallFullInfo[] = [];
-  for (const msg of thread) {
-    if (msg.role !== "assistant") continue;
-    const content = msg.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as Array<{
-      type?: string;
-      toolCallId?: string;
-      id?: string;
-      toolName?: string;
-      name?: string;
-      input?: unknown;
-      args?: unknown;
-    }>) {
-      if (part?.type === "tool-call" || part?.type === "tool_call") {
-        out.push({
-          toolCallId: part.toolCallId ?? part.id ?? `call_${Date.now()}`,
-          toolName: (part.toolName ?? part.name ?? "unknown") as string,
-          toolArgs: part.input ?? part.args ?? {},
-        });
+  for (const item of thread as Array<Record<string, unknown>>) {
+    if (item.type !== "function_call") continue;
+    let toolArgs: unknown = {};
+    if (typeof item.arguments === "string" && item.arguments.length > 0) {
+      try {
+        toolArgs = JSON.parse(String(item.arguments));
+      } catch {
+        toolArgs = {};
       }
     }
+    out.push({
+      toolCallId: String(item.callId ?? `call_${Date.now()}`),
+      toolName: String(item.name ?? "unknown"),
+      toolArgs,
+    });
   }
   return out;
 }
 
 /** Collect tool call IDs that already have results in the thread. */
-function getToolCallIdsWithResults(thread: ModelMessage[]): Set<string> {
+function getToolCallIdsWithResults(thread: AgentInputItem[]): Set<string> {
   const ids = new Set<string>();
-  for (const msg of thread) {
-    if (msg.role !== "tool") continue;
-    const content = msg.content;
-    if (!Array.isArray(content)) continue;
-    for (const part of content as Array<{
-      type?: string;
-      toolCallId?: string;
-    }>) {
-      if (part?.type === "tool-result" && part.toolCallId)
-        ids.add(part.toolCallId);
-    }
+  for (const item of thread as Array<Record<string, unknown>>) {
+    if (item.type !== "function_call_result") continue;
+    if (item.callId) ids.add(String(item.callId));
   }
   return ids;
 }
 
 /** First tool call that doesn't have a result yet (next to ask approval for). */
 function getNextToolCallNeedingApproval(
-  thread: ModelMessage[],
+  thread: AgentInputItem[],
 ): ToolCallFullInfo | null {
   const withResults = getToolCallIdsWithResults(thread);
   for (const tc of collectToolCalls(thread)) {
@@ -116,10 +125,139 @@ export interface ChatHandlerDeps {
   invalidateRunnerCache?: () => void;
 }
 
+function publishApiProgress(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  source: string,
+  eventId: string,
+  stage: import("../types.js").ChatProgressStage,
+  delta?: string,
+): void {
+  if (source !== "api" && source !== "web") return;
+  if (source === "api") {
+    publishResponse({
+      channel: "api",
+      eventId,
+      progress: {
+        stage,
+        ...(typeof delta === "string" && delta.length > 0 ? { delta } : {}),
+        ...(stage === "done" ? { done: true } : {}),
+      },
+    });
+    return;
+  }
+  publishResponse({
+    channel: "web",
+    eventId,
+    progress: {
+      stage,
+      ...(typeof delta === "string" && delta.length > 0 ? { delta } : {}),
+      ...(stage === "done" ? { done: true } : {}),
+    },
+  });
+}
+
+function stageLabel(stage: ChatProgressStage): string {
+  switch (stage) {
+    case "searching":
+      return "Searching...";
+    case "organizing":
+      return "Organizing...";
+    case "writing":
+      return "Writing...";
+    case "awaiting_approval":
+      return "Awaiting approval...";
+    case "done":
+      return "Done";
+    case "thinking":
+    default:
+      return "Thinking...";
+  }
+}
+
+function publishSlackStatus(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  channelMeta: ChannelMeta | undefined,
+  stage: ChatProgressStage,
+): void {
+  if (!channelMeta || channelMeta.channel !== "slack") return;
+  const threadTs = channelMeta.threadTs ?? channelMeta.messageTs;
+  publishResponse({
+    channel: "slack",
+    channelId: channelMeta.channelId,
+    ...(threadTs ? { threadTs } : {}),
+    status: {
+      stage,
+      label: stageLabel(stage),
+      ...(stage === "done" ? { done: true } : {}),
+    },
+  });
+}
+
+function createApiRunCallbacks(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  eventId: string,
+  source: string,
+): RunStreamCallbacks | undefined {
+  if (source !== "api" && source !== "web") return undefined;
+  return {
+    onStage: async (stage) => {
+      publishApiProgress(publishResponse, source, eventId, stage);
+    },
+    onTextDelta: async (delta) => {
+      publishApiProgress(publishResponse, source, eventId, "writing", delta);
+    },
+  };
+}
+
+function createSlackRunCallbacks(
+  publishResponse: ChatHandlerDeps["publishResponse"],
+  source: string,
+  channelMeta: ChannelMeta | undefined,
+): RunStreamCallbacks | undefined {
+  if (source !== "slack") return undefined;
+  if (!channelMeta || channelMeta.channel !== "slack") return undefined;
+  if ((channelMeta.connectAs ?? "bot") !== "bot") return undefined;
+  return {
+    onStage: async (stage) => {
+      publishSlackStatus(publishResponse, channelMeta, stage);
+    },
+  };
+}
+
+async function runAgentWithSignals(
+  deps: ChatHandlerDeps,
+  params: {
+    event: NormalizedEvent;
+    history: AgentInputItem[];
+    text: string | string[];
+    runOptions: RunChatOptions;
+    timeoutMs: number;
+  },
+): Promise<RunChatResult> {
+  const apiCallbacks = createApiRunCallbacks(
+    deps.publishResponse,
+    params.event.id,
+    params.event.source,
+  );
+  const slackCallbacks = createSlackRunCallbacks(
+    deps.publishResponse,
+    params.event.source,
+    params.runOptions.channel as ChannelMeta | undefined,
+  );
+  const callbacks = apiCallbacks ?? slackCallbacks;
+  return await deps.runAgent(
+    params.history,
+    params.text,
+    params.runOptions,
+    params.timeoutMs,
+    callbacks,
+  );
+}
+
 export function createChatHandler(
   deps: ChatHandlerDeps,
 ): (event: NormalizedEvent) => Promise<void> {
-  const { context, auditLog, publishResponse, runAgent } = deps;
+  const { context, auditLog, publishResponse } = deps;
 
   const dispatchResponse = (
     eventId: string,
@@ -146,6 +284,7 @@ export function createChatHandler(
       channelMeta as ChannelMeta | undefined,
     );
     const runOptions: RunChatOptions = {
+      source: event.source,
       channel: channelMeta as ChannelMeta | undefined,
       attachments: attachmentContents,
       sessionId: userId,
@@ -180,7 +319,13 @@ export function createChatHandler(
 
     try {
       const thread = await context.getThreadForAgent(userId);
-      const result = await runAgent(thread, text, runOptions, chatTimeoutMs);
+      const result = await runAgentWithSignals(deps, {
+        event,
+        history: thread,
+        text,
+        runOptions,
+        timeoutMs: chatTimeoutMs,
+      });
 
       if (result.needsApproval) {
         await handleNeedsApproval(deps, {
@@ -215,17 +360,20 @@ async function logIncomingMessage(
   auditLog: AuditLog,
   event: NormalizedEvent,
   userId: string,
-  text: string,
+  text: string | string[],
   channelMeta: ChannelMeta | undefined,
   sourceMessageType?: "audio",
 ): Promise<void> {
-  const textPreview = text.length > 100 ? `${text.slice(0, 100)}…` : text;
+  const textCombined = toCombinedText(text);
   await auditLog.appendAuditEntry({
     type: "incoming_message",
     payload: {
       source: event.source,
       userId,
-      textPreview,
+      textPreview:
+        textCombined.length > 100
+          ? `${textCombined.slice(0, 100)}…`
+          : textCombined,
       channel: (channelMeta as { channel?: string } | undefined)?.channel,
       eventId: event.id,
       ...(sourceMessageType ? { sourceMessageType } : {}),
@@ -263,7 +411,7 @@ async function handlePendingApproval(
     pending.toolName,
   );
 
-  const reply = await parsePendingReply(payload.text, pending);
+  const reply = await parsePendingReply(toLatestText(payload.text), pending);
   if (reply === "reject") {
     const consumed = await consumePending(payload.userId, channelKey);
     debug(
@@ -347,31 +495,25 @@ async function handleApprovalReject(
     consumed,
     dispatchResponse,
   } = ctx;
-  const { context, runAgent } = deps;
+  const { context } = deps;
 
-  let thread: ModelMessage[];
+  let thread: AgentInputItem[];
   try {
-    thread = JSON.parse(consumed.threadSnapshotJson) as ModelMessage[];
+    thread = JSON.parse(consumed.threadSnapshotJson) as AgentInputItem[];
   } catch {
     thread = [];
   }
   const deniedToolCallId =
     (consumed as { toolCallId?: string }).toolCallId ?? `call_${Date.now()}`;
-  const deniedOutput = mcpResultToToolResultOutput({
-    content: [{ type: "text", text: "Execution denied by user." }],
-  });
   const toolResultMessage = {
-    role: "tool" as const,
-    content: [
-      {
-        type: "tool-result" as const,
-        toolCallId: deniedToolCallId,
-        toolName: consumed.toolName,
-        output: deniedOutput,
-      },
-    ],
-  } as ModelMessage;
+    type: "function_call_result",
+    callId: deniedToolCallId,
+    name: consumed.toolName,
+    status: "completed",
+    output: "Execution denied by user.",
+  } as AgentInputItem;
   thread.push(toolResultMessage);
+  await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
 
   const nextTool = getNextToolCallNeedingApproval(thread);
   if (nextTool) {
@@ -392,26 +534,15 @@ async function handleApprovalReject(
 
   // All tools in this assistant message now have a result (approved or rejected). Run agent once to produce final response using all results.
   try {
-    const result = await runAgent(
-      thread,
-      "User denied one or more tools. Use the tool results for any tools that were approved; for any that were denied, say the user declined that check.",
+    const result = await runAgentWithSignals(deps, {
+      event,
+      history: thread,
+      text: "User denied one or more tools. Use the tool results for any tools that were approved; for any that were denied, say the user declined that check.",
       runOptions,
-      chatTimeoutMs,
-    );
+      timeoutMs: chatTimeoutMs,
+    });
 
     if (result.needsApproval) {
-      // We already persisted [user, assistant(tool calls)] in the first handleNeedsApproval.
-      // Persist only tool results + "User denied." Do NOT persist the new assistant message.
-      const histLen = consumed.historyLength ?? 0;
-      const turnFromHistory =
-        result.needsApproval.threadSnapshot.slice(histLen);
-      const newMessagesOnly = turnFromHistory.slice(2, -1);
-      if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(
-          payload.userId,
-          newMessagesOnly as ModelMessage[],
-        );
-      }
       await handleNeedsApproval(deps, {
         event,
         payload,
@@ -426,7 +557,7 @@ async function handleApprovalReject(
     const assistantText = result.output?.trim() || "I didn't run that tool.";
     await context.addTurnToChatHistory(
       payload.userId,
-      payload.text,
+      toCombinedText(payload.text),
       assistantText,
       {
         userAttachments: payload.attachments,
@@ -439,27 +570,29 @@ async function handleApprovalReject(
       assistantText,
     );
 
-    // We already persisted [user, assistant(tool call)] in handleNeedsApproval.
-    const historyLength = consumed.historyLength ?? 0;
-    const turnFromHistory = thread.slice(historyLength);
-    const toolResultsAndRun = [
-      ...turnFromHistory.slice(2),
-      ...(result.messages ?? []),
-    ] as ModelMessage[];
-    if (toolResultsAndRun.length) {
-      await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
+    const runMessages = result.messages ?? [];
+    if (runMessages.length) {
+      await context.addTurnToAgentThread(payload.userId, runMessages);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
-        { role: "user", content: payload.text },
-        { role: "assistant", content: assistantText },
-      ] as ModelMessage[]);
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: assistantText }],
+        },
+      ] as AgentInputItem[]);
     }
   } catch (err) {
     const msg = (err as Error).message;
     const assistantText = `Something went wrong: ${msg}. Check API logs.`;
     await context.addTurnToChatHistory(
       payload.userId,
-      payload.text,
+      toCombinedText(payload.text),
       assistantText,
       {
         userAttachments: payload.attachments,
@@ -487,7 +620,7 @@ async function handleApprovalConfirm(
     chatTimeoutMs,
     dispatchResponse,
   } = ctx;
-  const { context, auditLog, getRunner, runAgent } = deps;
+  const { context, auditLog, getRunner } = deps;
 
   const consumed = await consumePending(payload.userId, channelKey);
   if (!consumed) {
@@ -534,9 +667,9 @@ async function handleApprovalConfirm(
   );
 
   try {
-    let thread: ModelMessage[];
+    let thread: AgentInputItem[];
     try {
-      thread = JSON.parse(consumed.threadSnapshotJson) as ModelMessage[];
+      thread = JSON.parse(consumed.threadSnapshotJson) as AgentInputItem[];
     } catch {
       thread = [];
     }
@@ -547,19 +680,18 @@ async function handleApprovalConfirm(
     );
     const executedToolCallId =
       (consumed as { toolCallId?: string }).toolCallId ?? `call_${Date.now()}`;
-    const toolOutput = mcpResultToToolResultOutput(toolResult);
     const toolResultMessage = {
-      role: "tool" as const,
-      content: [
-        {
-          type: "tool-result" as const,
-          toolCallId: executedToolCallId,
-          toolName: consumed.toolName,
-          output: toolOutput,
-        },
-      ],
-    } as ModelMessage;
+      type: "function_call_result",
+      callId: executedToolCallId,
+      name: consumed.toolName,
+      status: "completed",
+      output:
+        typeof toolResult === "string"
+          ? toolResult
+          : JSON.stringify(toolResult ?? {}),
+    } as AgentInputItem;
     thread.push(toolResultMessage);
+    await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
 
     const nextTool = getNextToolCallNeedingApproval(thread);
     if (nextTool) {
@@ -579,22 +711,15 @@ async function handleApprovalConfirm(
     }
 
     // All tools in this assistant message now have a result (approved or rejected). Run agent once to produce final response using all results.
-    const result = await runAgent(thread, "", runOptions, chatTimeoutMs);
+    const result = await runAgentWithSignals(deps, {
+      event,
+      history: thread,
+      text: "",
+      runOptions,
+      timeoutMs: chatTimeoutMs,
+    });
 
     if (result.needsApproval) {
-      // We already persisted [user, assistant(tool calls)] in the first handleNeedsApproval.
-      // Persist only tool results + "User approved." Do NOT persist the new assistant message
-      // (it has tool calls with no results yet); it stays in pending until we have results.
-      const histLen = consumed.historyLength ?? 0;
-      const turnFromHistory =
-        result.needsApproval.threadSnapshot.slice(histLen);
-      const newMessagesOnly = turnFromHistory.slice(2, -1);
-      if (newMessagesOnly.length) {
-        await context.addTurnToAgentThread(
-          payload.userId,
-          newMessagesOnly as ModelMessage[],
-        );
-      }
       await handleNeedsApproval(deps, {
         event,
         payload,
@@ -609,7 +734,7 @@ async function handleApprovalConfirm(
     const assistantText = result.output?.trim() || "Done.";
     await context.addTurnToChatHistory(
       payload.userId,
-      payload.text,
+      toCombinedText(payload.text),
       assistantText,
       {
         userAttachments: payload.attachments,
@@ -622,21 +747,22 @@ async function handleApprovalConfirm(
       assistantText,
     );
 
-    // We already persisted [user, assistant(tool call)] in handleNeedsApproval.
-    // Persist all tool results (from this sequential approval chain) + run result.
-    const historyLength = consumed.historyLength ?? 0;
-    const turnFromHistory = thread.slice(historyLength);
-    const toolResultsAndRun = [
-      ...turnFromHistory.slice(2), // skip user + assistant; keep all tool results
-      ...(result.messages ?? []),
-    ] as ModelMessage[];
-    if (toolResultsAndRun.length) {
-      await context.addTurnToAgentThread(payload.userId, toolResultsAndRun);
+    const runMessages = result.messages ?? [];
+    if (runMessages.length) {
+      await context.addTurnToAgentThread(payload.userId, runMessages);
     } else {
       await context.addTurnToAgentThread(payload.userId, [
-        { role: "user", content: payload.text },
-        { role: "assistant", content: assistantText },
-      ] as ModelMessage[]);
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: assistantText }],
+        },
+      ] as AgentInputItem[]);
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -677,7 +803,7 @@ async function requestApprovalForTool(
     toolName: string;
     toolArgs: unknown;
     toolCallId: string;
-    thread: ModelMessage[];
+    thread: AgentInputItem[];
     historyLength?: number;
     dispatchResponse: (
       eventId: string,
@@ -754,15 +880,20 @@ async function requestApprovalForTool(
     event.source,
     runOptions.channel as ChannelMeta | undefined,
     approvalMessage,
-    event.source === "api" ? approvalRequest : undefined,
+    event.source === "api" || event.source === "web"
+      ? approvalRequest
+      : undefined,
   );
   await context.addTurnToChatHistory(
     payload.userId,
-    payload.text,
+    toCombinedText(payload.text),
     approvalMessage,
     {
       userAttachments: payload.attachments,
-      approvalRequest: event.source === "api" ? approvalRequest : undefined,
+      approvalRequest:
+        event.source === "api" || event.source === "web"
+          ? approvalRequest
+          : undefined,
     },
   );
 }
@@ -867,15 +998,20 @@ async function handleNeedsApproval(
     event.source,
     runOptions.channel as ChannelMeta | undefined,
     approvalMessage,
-    event.source === "api" ? approvalRequest : undefined,
+    event.source === "api" || event.source === "web"
+      ? approvalRequest
+      : undefined,
   );
   await context.addTurnToChatHistory(
     payload.userId,
-    payload.text,
+    toCombinedText(payload.text),
     approvalMessage,
     {
       userAttachments: payload.attachments,
-      approvalRequest: event.source === "api" ? approvalRequest : undefined,
+      approvalRequest:
+        event.source === "api" || event.source === "web"
+          ? approvalRequest
+          : undefined,
     },
   );
 }
@@ -907,11 +1043,11 @@ async function handleAgentSuccess(
     type: "response",
     text: assistantText,
     eventId: event.id,
-    userInput: payload.text,
+    userInput: toCombinedText(payload.text),
   });
   await context.addTurnToChatHistory(
     payload.userId,
-    payload.text,
+    toCombinedText(payload.text),
     assistantText,
     {
       userAttachments: payload.attachments,
@@ -934,9 +1070,17 @@ async function handleAgentSuccess(
     await context.addTurnToAgentThread(payload.userId, messages);
   } else {
     await context.addTurnToAgentThread(payload.userId, [
-      { role: "user", content: payload.text },
-      { role: "assistant", content: assistantText },
-    ] as ModelMessage[]);
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: assistantText }],
+      },
+    ] as AgentInputItem[]);
   }
 }
 
@@ -974,7 +1118,7 @@ async function handleChatError(
 
   await context.addTurnToChatHistory(
     payload.userId,
-    payload.text,
+    toCombinedText(payload.text),
     assistantText,
     {
       userAttachments: payload.attachments,
@@ -988,7 +1132,15 @@ async function handleChatError(
     assistantText,
   );
   await context.addTurnToAgentThread(payload.userId, [
-    { role: "user", content: payload.text },
-    { role: "assistant", content: assistantText },
-  ] as ModelMessage[]);
+    {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+    },
+    {
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: assistantText }],
+    },
+  ] as AgentInputItem[]);
 }

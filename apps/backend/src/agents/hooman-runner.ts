@@ -1,15 +1,19 @@
 /**
- * Hooman agent run via Vercel AI SDK (ToolLoopAgent + tools). No personas; MCP and skills attached to main flow.
+ * Hooman agent run via OpenAI Agents SDK. No personas; MCP and skills attached to main flow.
  */
 import { getHoomanModel } from "./model-provider.js";
-import { ToolLoopAgent, ToolSet, stepCountIs } from "ai";
-import type { FilePart, ImagePart, ModelMessage, TextPart } from "ai";
 import createDebug from "debug";
+import { Agent, run, tool, type AgentInputItem } from "@openai/agents";
+import { aisdk } from "@openai/agents-extensions/ai-sdk";
 import {
   createSkillService,
   type SkillService,
 } from "../capabilities/skills/skills-service.js";
-import type { AuditLogEntry, ChannelMeta } from "../types.js";
+import type {
+  AuditLogEntry,
+  ChannelMeta,
+  ChatProgressStage,
+} from "../types.js";
 import {
   getConfig,
   getFullStaticAgentInstructionsAppend,
@@ -17,7 +21,7 @@ import {
 } from "../config.js";
 import { buildChannelContext } from "../channels/shared.js";
 import { buildAgentSystemPrompt } from "../utils/prompts.js";
-import { truncateForMax } from "../utils/helpers.js";
+import { runWithTimeout, truncateForMax } from "../utils/helpers.js";
 
 const IMAGE_MIME_TYPES = [
   "image/jpeg",
@@ -26,13 +30,18 @@ const IMAGE_MIME_TYPES = [
   "image/webp",
 ] as const;
 
-type UserContentPart = TextPart | ImagePart | FilePart;
+type UserInputContentPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image: string; detail?: string }
+  | { type: "input_file"; file: string; filename?: string };
 
 function buildUserContentParts(
   text: string,
   attachments?: Array<{ name: string; contentType: string; data: string }>,
-): UserContentPart[] {
-  const parts: UserContentPart[] = [{ type: "text", text }];
+): UserInputContentPart[] {
+  const parts: UserInputContentPart[] = [
+    { type: "input_text", text: text ?? "" },
+  ];
   if (attachments?.length) {
     for (const a of attachments) {
       const data = typeof a.data === "string" ? a.data.trim() : "";
@@ -44,9 +53,13 @@ function buildUserContentParts(
           contentType as (typeof IMAGE_MIME_TYPES)[number],
         )
       ) {
-        parts.push({ type: "image", image: dataUrl, mediaType: contentType });
+        parts.push({ type: "input_image", image: dataUrl, detail: "auto" });
       } else {
-        parts.push({ type: "file", data: dataUrl, mediaType: contentType });
+        parts.push({
+          type: "input_file",
+          file: dataUrl,
+          filename: a.name,
+        });
       }
     }
   }
@@ -57,7 +70,15 @@ const debug = createDebug("hooman:hooman-runner");
 const DEBUG_TOOL_LOG_MAX = 200; // max chars for args/result in logs
 const AUDIT_TOOL_PAYLOAD_MAX = 100; // max chars for tool args/result in audit log
 
+export type RunProgressStage = ChatProgressStage;
+
+export interface RunStreamCallbacks {
+  onStage?: (stage: RunProgressStage) => void | Promise<void>;
+  onTextDelta?: (delta: string) => void | Promise<void>;
+}
+
 export interface RunChatOptions {
+  source?: string;
   channel?: ChannelMeta;
   sessionId?: string;
   attachments?: Array<{
@@ -75,24 +96,25 @@ export interface NeedsApprovalPayload {
   /** Tool id (e.g. connectionId/name) for allow-every-time store; may be same as toolName if not provided. */
   toolId?: string;
   /** Full thread at pause (history + user message + assistant tool call). Used to resume after approval. */
-  threadSnapshot: ModelMessage[];
+  threadSnapshot: AgentInputItem[];
   /** Length of history already in memory when we paused. threadSnapshot.slice(historyLength) is the turn not yet persisted. */
   historyLength: number;
 }
 
 export interface RunChatResult {
   output: string;
-  /** Full AI SDK messages for this turn (user + assistant with tool calls/results). Store via context.addTurnToAgentThread for recollect. */
-  messages?: ModelMessage[];
+  /** Full OpenAI Agents items for this turn. */
+  messages?: AgentInputItem[];
   /** Set when the model requested a tool that requires approval; runner paused. Handler should save pending and send approval prompt. */
   needsApproval?: NeedsApprovalPayload;
 }
 
 export interface HoomanRunner {
   generate(
-    history: ModelMessage[],
-    message: string,
+    history: AgentInputItem[],
+    message: string | string[],
     options?: RunChatOptions,
+    callbacks?: RunStreamCallbacks,
   ): Promise<RunChatResult>;
   /** Execute a single tool by name (used on approval confirm to run the tool before resume). */
   executeTool(toolName: string, toolArgs: unknown): Promise<unknown>;
@@ -104,78 +126,118 @@ export type AuditLogAppender = {
   ): Promise<void>;
 };
 
-/** Wraps tools so that those in toolsThatNeedApproval have needsApproval: true (SDK will pause and return tool-approval-request). */
-function wrapToolsForApproval(
-  agentTools: Record<string, unknown>,
-  toolsThatNeedApproval: Set<string>,
-): Record<string, unknown> {
-  if (toolsThatNeedApproval.size === 0) return agentTools;
-  const wrapped: Record<string, unknown> = {};
-  for (const [name, tool] of Object.entries(agentTools)) {
-    const t = tool as Record<string, unknown>;
-    if (toolsThatNeedApproval.has(name)) {
-      wrapped[name] = { ...t, needsApproval: true };
-    } else {
-      wrapped[name] = tool;
-    }
-  }
-  return wrapped;
+type OpenAIAgentTool = {
+  description?: string;
+  inputSchema?: unknown;
+  parameters?: unknown;
+  execute?: (args: unknown) => Promise<unknown>;
+};
+
+function toJsonSchema(parameters: unknown): Record<string, unknown> {
+  if (
+    parameters &&
+    typeof parameters === "object" &&
+    !Array.isArray(parameters)
+  )
+    return parameters as Record<string, unknown>;
+  return {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: true,
+  };
 }
 
-/** Detect tool-approval-request in SDK result (content or last step content). */
-function getApprovalRequestFromResponse(response: {
-  content?: Array<{
-    type: string;
-    toolCall?: { toolCallId?: string; toolName?: string; input?: unknown };
-    approvalId?: string;
-  }>;
-  steps?: Array<{
-    content?: Array<{
-      type: string;
-      toolCall?: { toolCallId?: string; toolName?: string; input?: unknown };
-      approvalId?: string;
-    }>;
-  }>;
-}): { toolName: string; toolArgs: unknown; toolCallId: string } | null {
-  const check = (
-    content:
-      | Array<{
-          type: string;
-          toolCall?: {
-            toolCallId?: string;
-            toolName?: string;
-            input?: unknown;
-          };
-          approvalId?: string;
-        }>
-      | undefined,
-  ) => {
-    if (!content) return null;
-    const part = content.find((p) => p.type === "tool-approval-request");
-    if (!part?.toolCall) return null;
-    const tc = part.toolCall;
-    const name = tc.toolName ?? (tc as { name?: string }).name;
-    if (!name) return null;
-    const toolCallId =
-      tc.toolCallId ?? (tc as { id?: string }).id ?? `call_${Date.now()}`;
-    return {
-      toolName: name,
-      toolArgs:
-        (tc as { input?: unknown }).input ?? (tc as { args?: unknown }).args,
-      toolCallId,
-    };
-  };
-  if (response.content) {
-    const found = check(response.content);
-    if (found) return found;
+function buildOpenAITools(options: {
+  agentTools: Record<string, unknown>;
+  toolsThatNeedApproval: Set<string>;
+  toolTimeoutMs: number | undefined;
+  auditLog?: AuditLogAppender;
+}): Array<ReturnType<typeof tool>> {
+  const { agentTools, toolsThatNeedApproval, toolTimeoutMs, auditLog } =
+    options;
+  const out: Array<ReturnType<typeof tool>> = [];
+  for (const [name, raw] of Object.entries(agentTools)) {
+    const t = raw as OpenAIAgentTool;
+    if (typeof t.execute !== "function") continue;
+    out.push(
+      tool({
+        name,
+        description: t.description ?? "",
+        parameters: toJsonSchema(t.inputSchema ?? t.parameters) as any,
+        strict: false,
+        ...(toolTimeoutMs && toolTimeoutMs > 0
+          ? {
+              timeoutMs: toolTimeoutMs,
+              timeoutBehavior: "raise_exception" as const,
+            }
+          : {}),
+        needsApproval: async (runContext: unknown) => {
+          const source = (runContext as { context?: { source?: string } })
+            ?.context?.source;
+          if (source === "api" || source === "scheduler") return false;
+          return toolsThatNeedApproval.has(name);
+        },
+        async execute(input) {
+          debug(
+            "Tool call: %s args=%s",
+            name,
+            truncateForMax(input, DEBUG_TOOL_LOG_MAX),
+          );
+          if (auditLog) {
+            void auditLog.appendAuditEntry({
+              type: "tool_call_start",
+              payload: {
+                toolName: name,
+                input: truncateForMax(input, AUDIT_TOOL_PAYLOAD_MAX),
+              },
+            });
+          }
+          const result = await t.execute!(input);
+          if (auditLog) {
+            void auditLog.appendAuditEntry({
+              type: "tool_call_end",
+              payload: {
+                toolName: name,
+                result: truncateForMax(result, AUDIT_TOOL_PAYLOAD_MAX),
+              },
+            });
+          }
+          return result;
+        },
+      }),
+    );
   }
-  const steps = response.steps ?? [];
-  if (steps.length > 0) {
-    const last = steps[steps.length - 1];
-    const found = check(last?.content);
-    if (found) return found;
+  return out;
+}
+
+function parseToolArgs(rawArgs: string | undefined): unknown {
+  if (!rawArgs || rawArgs.trim() === "") return {};
+  try {
+    return JSON.parse(rawArgs);
+  } catch {
+    return {};
   }
-  return null;
+}
+
+function mapRunItemEventNameToStage(
+  name: string,
+): Exclude<RunProgressStage, "done"> {
+  switch (name) {
+    case "tool_search_called":
+    case "tool_called":
+      return "searching";
+    case "tool_search_output_created":
+    case "tool_output":
+    case "reasoning_item_created":
+      return "organizing";
+    case "message_output_created":
+      return "writing";
+    case "tool_approval_requested":
+      return "awaiting_approval";
+    default:
+      return "thinking";
+  }
 }
 
 export async function createHoomanRunner(options: {
@@ -189,7 +251,6 @@ export async function createHoomanRunner(options: {
   skillService?: SkillService;
 }): Promise<HoomanRunner> {
   const config = getConfig();
-  const model = getHoomanModel(config);
 
   const {
     agentTools,
@@ -199,11 +260,6 @@ export async function createHoomanRunner(options: {
     sessionId,
     skillService: injectedSkillService,
   } = options;
-
-  const wrappedTools = wrapToolsForApproval(
-    agentTools,
-    toolsThatNeedApproval,
-  ) as ToolSet;
 
   const skillService = injectedSkillService ?? createSkillService();
   const systemMcpList = getSystemMcpServers();
@@ -222,155 +278,149 @@ export async function createHoomanRunner(options: {
     skillsSection,
     sessionId,
   });
+  const toolTimeoutMs = getConfig().TOOL_TIMEOUT_MS ?? 300_000;
+  const openAiTools = buildOpenAITools({
+    agentTools,
+    toolsThatNeedApproval,
+    toolTimeoutMs: toolTimeoutMs > 0 ? toolTimeoutMs : undefined,
+    auditLog,
+  });
+  const openAiModel = aisdk(getHoomanModel(config) as any);
+  const maxTurns = getConfig().MAX_TURNS || 999;
+  const agent = new Agent({
+    name: "Hooman",
+    instructions: fullSystem,
+    model: openAiModel,
+    tools: openAiTools,
+  });
 
   return {
-    async generate(history, message, options) {
-      const input: ModelMessage[] = [...history];
-      let prompt: ModelMessage | null = null;
+    async generate(history, message, options, callbacks) {
+      const input: AgentInputItem[] = [...history];
+      const messageParts = Array.isArray(message)
+        ? message.map((m) => m.trim()).filter((m) => m.length > 0)
+        : typeof message === "string" && message.trim().length > 0
+          ? [message.trim()]
+          : [];
       const hasUserContent =
-        (typeof message === "string" && message.trim() !== "") ||
-        (options?.attachments?.length ?? 0) > 0;
+        messageParts.length > 0 || (options?.attachments?.length ?? 0) > 0;
       if (hasUserContent) {
         const channelContext = buildChannelContext(options?.channel);
-        const userContent = buildUserContentParts(
-          message ?? "",
-          options?.attachments,
-        );
-        prompt = channelContext?.trim()
-          ? {
-              role: "user",
-              content: [
-                {
-                  type: "text" as const,
-                  text: `### Channel Context\nThe following message originated from an external channel. Details are as below:\n\n${channelContext.trim()}\n\n---\n\n`,
-                },
-                ...userContent,
-              ],
-            }
-          : { role: "user", content: userContent };
-        input.push(prompt);
+        const turns = messageParts.length > 0 ? messageParts : [""];
+        for (let i = 0; i < turns.length; i += 1) {
+          const turnText = turns[i] ?? "";
+          const isLastTurn = i === turns.length - 1;
+          const userContent = buildUserContentParts(
+            turnText,
+            isLastTurn ? options?.attachments : undefined,
+          );
+          const prompt: AgentInputItem = {
+            type: "message",
+            role: "user",
+            content:
+              i === 0 && channelContext?.trim()
+                ? [
+                    {
+                      type: "input_text",
+                      text: `### Channel Context\nThe following message originated from an external channel. Details are as below:\n\n${channelContext.trim()}\n\n---\n\n`,
+                    },
+                    ...userContent,
+                  ]
+                : userContent,
+          };
+          input.push(prompt);
+        }
       }
 
-      const maxSteps = getConfig().MAX_TURNS || 999;
-      const agent = new ToolLoopAgent({
-        model,
-        instructions: fullSystem,
-        tools: wrappedTools,
-        stopWhen: stepCountIs(maxSteps),
-        providerOptions: {
-          openai: {
-            include: ["reasoning.encrypted_content"],
-          },
-        },
-        experimental_onToolCallStart({ toolCall }) {
-          const name =
-            toolCall.toolName ?? (toolCall as { name?: string }).name;
-          const input =
-            (toolCall as { input?: unknown }).input ??
-            (toolCall as { args?: unknown }).args;
-          debug(
-            "Tool call: %s args=%s",
-            name,
-            truncateForMax(input, DEBUG_TOOL_LOG_MAX),
-          );
-          if (auditLog) {
-            void auditLog.appendAuditEntry({
-              type: "tool_call_start",
-              payload: {
-                toolName: name,
-                input: truncateForMax(input, AUDIT_TOOL_PAYLOAD_MAX),
-              },
-            });
-          }
-        },
-        experimental_onToolCallFinish({ toolCall, success, output, error }) {
-          const name =
-            toolCall.toolName ?? (toolCall as { name?: string }).name;
-          const result = success ? output : error;
-          debug(
-            "Tool result: %s result=%s",
-            name,
-            truncateForMax(result, DEBUG_TOOL_LOG_MAX),
-          );
-          if (auditLog) {
-            void auditLog.appendAuditEntry({
-              type: "tool_call_end",
-              payload: {
-                toolName: name,
-                result:
-                  result !== undefined
-                    ? truncateForMax(result, AUDIT_TOOL_PAYLOAD_MAX)
-                    : "(no result)",
-              },
-            });
-          }
-        },
-        onFinish(finishResult) {
-          const steps = finishResult.steps ?? [];
-          const stepCount = steps.length;
-          const totalToolCalls = steps.reduce(
-            (n, s) => n + (Array.isArray(s.toolCalls) ? s.toolCalls.length : 0),
-            0,
-          );
-          const finishReason =
-            typeof finishResult.finishReason === "string"
-              ? finishResult.finishReason
-              : String(finishResult.finishReason ?? "unknown");
-          debug(
-            "Run finished: steps=%d toolCalls=%d finishReason=%s",
-            stepCount,
-            totalToolCalls,
-            finishReason,
-          );
-          if (auditLog) {
-            void auditLog.appendAuditEntry({
-              type: "run_summary",
-              payload: {
-                stepCount,
-                totalToolCalls,
-                finishReason,
-              },
-            });
-          }
-        },
+      const result = await run(agent, input, {
+        maxTurns,
+        stream: true,
+        context: { source: options?.source ?? null },
       });
-
-      const response = await agent.generate({ messages: input });
-      const approvalReq = getApprovalRequestFromResponse(response);
-      if (approvalReq) {
+      let lastStage: RunProgressStage | null = null;
+      const emitStage = async (stage: RunProgressStage) => {
+        if (!callbacks?.onStage || lastStage === stage) return;
+        lastStage = stage;
+        await callbacks.onStage(stage);
+      };
+      await emitStage("thinking");
+      for await (const event of result) {
+        if (event.type === "raw_model_stream_event") {
+          const data = event.data as { type?: string; delta?: string };
+          if (
+            data.type === "output_text_delta" &&
+            typeof data.delta === "string" &&
+            data.delta.length > 0
+          ) {
+            await emitStage("writing");
+            if (callbacks?.onTextDelta) await callbacks.onTextDelta(data.delta);
+          }
+          continue;
+        }
+        if (event.type === "run_item_stream_event") {
+          const stage = mapRunItemEventNameToStage(event.name);
+          await emitStage(stage);
+        }
+      }
+      await result.completed;
+      const interruption = result.interruptions?.[0];
+      if (interruption) {
+        const name =
+          interruption.toolName ??
+          interruption.name ??
+          (interruption.rawItem as { name?: string }).name;
+        if (!name) {
+          throw new Error("Tool approval interruption missing tool name");
+        }
+        const toolCallId = String(
+          (interruption.rawItem as { callId?: string }).callId ??
+            `call_${Date.now()}`,
+        );
+        const toolArgs = parseToolArgs(interruption.arguments);
         debug(
           "Tool requires approval, pausing toolName=%s args=%s",
-          approvalReq.toolName,
-          truncateForMax(approvalReq.toolArgs, DEBUG_TOOL_LOG_MAX),
+          name,
+          truncateForMax(toolArgs, DEBUG_TOOL_LOG_MAX),
         );
-        const threadSnapshot: ModelMessage[] = [
-          ...input,
-          ...(response.response?.messages ?? []),
-        ];
-        const toolId = prefixedNameToToolId?.get(approvalReq.toolName);
-        /** When prompt was added, input = [...history, prompt]; else input = history. Use length - 1 when no prompt so the next persist (after approval) includes the last message in input (the new assistant) plus the tool result we will add. */
-        const historyLength = prompt
-          ? input.length - 1
-          : Math.max(0, input.length - 1);
+        const threadSnapshot: AgentInputItem[] = result.history;
+        const toolId = prefixedNameToToolId?.get(name);
+        const historyLength = history.length;
         return {
           output: "",
           needsApproval: {
-            toolName: approvalReq.toolName,
-            toolArgs: approvalReq.toolArgs,
-            toolCallId: approvalReq.toolCallId,
-            toolId: toolId ?? approvalReq.toolName,
+            toolName: name,
+            toolArgs,
+            toolCallId,
+            toolId: toolId ?? name,
             threadSnapshot,
             historyLength,
           },
         };
       }
+      await emitStage("done");
 
-      const messages: ModelMessage[] = prompt
-        ? [prompt, ...response.response.messages]
-        : [...(response.response?.messages ?? [])];
+      const stepCount = result.newItems?.length ?? 0;
+      const finishReason = result.interruptions?.length
+        ? "interrupted"
+        : "done";
+      if (auditLog) {
+        void auditLog.appendAuditEntry({
+          type: "run_summary",
+          payload: {
+            stepCount,
+            totalToolCalls: stepCount,
+            finishReason,
+          },
+        });
+      }
+      const threadSnapshot = result.history as AgentInputItem[];
+      const messages: AgentInputItem[] = threadSnapshot.slice(history.length);
 
       return {
-        output: response.text ?? "",
+        output:
+          typeof result.finalOutput === "string"
+            ? result.finalOutput
+            : String(result.finalOutput ?? ""),
         messages,
       };
     },
@@ -388,8 +438,17 @@ export async function createHoomanRunner(options: {
         debug("Tool not found or has no execute: %s", toolName);
         throw new Error(`Tool not found or has no execute: ${toolName}`);
       }
+      const toolTimeoutMs = getConfig().TOOL_TIMEOUT_MS ?? 300_000;
+      const timeoutError = new Error(
+        `Tool "${toolName}" timed out after ${toolTimeoutMs}ms`,
+      );
+      timeoutError.name = "ToolTimeoutError";
       try {
-        const result = await rawTool.execute(toolArgs);
+        const result = await runWithTimeout(
+          () => rawTool.execute!(toolArgs),
+          toolTimeoutMs > 0 ? toolTimeoutMs : null,
+          timeoutError,
+        );
         debug("Tool completed toolName=%s", toolName);
         return result;
       } catch (err) {

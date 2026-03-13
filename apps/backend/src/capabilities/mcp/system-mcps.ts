@@ -68,8 +68,15 @@ const ALL_SYSTEM_MCP_CONNECTIONS: MCPConnectionStdio[] = [
     command: "npx",
     args: ["-y", "@wonderwhy-er/desktop-commander@latest", "--no-onboarding"],
     cwd: DEFAULT_MCP_CWD,
-    tool_filter:
-      "start_process,interact_with_process,read_process_output,force_terminate,list_sessions,list_processes,kill_process",
+    allowedToolNames: [
+      "start_process",
+      "interact_with_process",
+      "read_process_output",
+      "force_terminate",
+      "list_sessions",
+      "list_processes",
+      "kill_process",
+    ],
   },
   {
     id: "_default_thinking",
@@ -86,7 +93,12 @@ const ALL_SYSTEM_MCP_CONNECTIONS: MCPConnectionStdio[] = [
     args: ["tsx", MEMORY_MCP_SERVER_PATH],
     cwd: DEFAULT_MCP_CWD,
     // Only universal memory tools; scoped tools require sessionId which the LLM cannot determine.
-    tool_filter: "*_universal_memory",
+    allowedToolNames: [
+      "add_to_universal_memory",
+      "search_universal_memory",
+      "clear_universal_memory",
+      "forget_universal_memory",
+    ],
   },
   {
     id: "_default_schedule",
