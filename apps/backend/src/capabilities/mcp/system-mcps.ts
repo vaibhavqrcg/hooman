@@ -60,6 +60,7 @@ const ALL_SYSTEM_MCP_CONNECTIONS: MCPConnectionStdio[] = [
     name: "filesystem",
     command: "npx",
     args: ["-y", "@modelcontextprotocol/server-filesystem", DEFAULT_MCP_CWD],
+    cwd: DEFAULT_MCP_CWD,
   },
   {
     id: "_default_desktop_commander",
