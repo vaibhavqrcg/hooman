@@ -37,6 +37,12 @@ const SLACK_APP_MANIFEST = {
       display_name: "Hooman",
       always_online: false,
     },
+    app_home: {
+      home_tab_enabled: false,
+      messages_tab_enabled: true,
+      /** false = allow users to send slash commands and messages from the messages tab */
+      messages_tab_read_only_enabled: false,
+    },
   },
   oauth_config: {
     scopes: {
