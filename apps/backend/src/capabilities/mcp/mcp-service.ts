@@ -90,6 +90,12 @@ function toToolFilter(c: MCPConnection) {
   });
 }
 
+/** Per-request timeout for connect/listTools in the MCP SDK; must be at least as long as slow deployments need. */
+const MCP_CLIENT_SESSION_TIMEOUT_SECONDS = Math.max(
+  5,
+  Math.ceil(DEFAULT_MCP_SERVER_TIMEOUT_MS / 1000),
+);
+
 function createServerForConnection(c: MCPConnection): MCPServer {
   if (c.type === "stdio") {
     const stdio = c as MCPConnectionStdio;
@@ -100,6 +106,7 @@ function createServerForConnection(c: MCPConnection): MCPServer {
       env: stdio.env,
       cwd: stdio.cwd?.trim() || DEFAULT_MCP_CWD,
       timeout: DEFAULT_MCP_SERVER_TIMEOUT_MS,
+      clientSessionTimeoutSeconds: MCP_CLIENT_SESSION_TIMEOUT_SECONDS,
       toolFilter: toToolFilter(c),
     });
   }
@@ -113,6 +120,7 @@ function createServerForConnection(c: MCPConnection): MCPServer {
       timeout: http.timeout_seconds
         ? Math.max(1, http.timeout_seconds) * 1000
         : DEFAULT_MCP_SERVER_TIMEOUT_MS,
+      clientSessionTimeoutSeconds: MCP_CLIENT_SESSION_TIMEOUT_SECONDS,
       cacheToolsList: http.cache_tools_list ?? true,
       toolFilter: toToolFilter(c),
     });
@@ -124,6 +132,7 @@ function createServerForConnection(c: MCPConnection): MCPServer {
     url: hosted.server_url,
     requestInit: hosted.headers ? { headers: hosted.headers } : undefined,
     timeout: DEFAULT_MCP_SERVER_TIMEOUT_MS,
+    clientSessionTimeoutSeconds: MCP_CLIENT_SESSION_TIMEOUT_SECONDS,
     cacheToolsList: true,
     toolFilter: toToolFilter(c),
   });
