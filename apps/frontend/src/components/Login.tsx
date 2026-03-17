@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { login } from "../api";
+import { login, getAuthStatus } from "../api";
 import { setToken } from "../auth";
 import { resetSocket } from "../socket";
 import { Button } from "./Button";
@@ -12,6 +12,12 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getAuthStatus().then(({ authRequired }) => {
+      if (!authRequired) navigate("/chat", { replace: true });
+    });
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

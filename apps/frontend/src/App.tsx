@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { getToken } from "./auth";
+import { getAuthStatus } from "./api";
 import { Chat } from "./components/Chat";
 import { Channels } from "./components/Channels";
 import { Sidebar } from "./components/Sidebar";
@@ -12,6 +13,18 @@ import { Settings } from "./components/Settings";
 import { Login } from "./components/Login";
 
 function RedirectToChatOrLogin() {
+  const [authRequired, setAuthRequired] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    getAuthStatus().then(({ authRequired: required }) => setAuthRequired(required));
+  }, []);
+
+  if (authRequired === null) {
+    return null;
+  }
+  if (!authRequired) {
+    return <Navigate to="/chat" replace />;
+  }
   return <Navigate to={getToken() ? "/chat" : "/login"} replace />;
 }
 

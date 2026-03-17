@@ -4,6 +4,11 @@ import { env, isWebAuthEnabled } from "../env.js";
 import { signToken } from "../middleware/auth-jwt.js";
 
 export function registerAuthRoutes(app: Express): void {
+  /** Public: tells the frontend whether to show the login page. */
+  app.get("/api/auth/status", (_req: Request, res: Response) => {
+    res.json({ authRequired: isWebAuthEnabled() });
+  });
+
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     if (!isWebAuthEnabled()) {
       res.status(501).json({

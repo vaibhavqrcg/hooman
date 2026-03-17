@@ -31,6 +31,15 @@ async function authFetch(
   return res;
 }
 
+/** Public: whether the backend requires web auth. Used to show or skip the login page. */
+export async function getAuthStatus(): Promise<{ authRequired: boolean }> {
+  const base = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
+  const res = await fetch(`${base}/api/auth/status`);
+  if (!res.ok) return { authRequired: true };
+  const data = (await res.json()) as { authRequired?: boolean };
+  return { authRequired: data.authRequired === true };
+}
+
 /** Login (no auth header). Returns token on success; throws on failure. */
 export async function login(
   username: string,

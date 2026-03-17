@@ -45,6 +45,7 @@ export async function verifyToken(token: string): Promise<AuthPayload | null> {
 /** Paths that skip JWT (any method). */
 const PUBLIC_PATHS = new Set([
   "/api/auth/login",
+  "/api/auth/status",
   "/api/capabilities/mcp/oauth/callback",
   "/api/health",
 ]);
