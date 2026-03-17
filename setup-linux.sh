@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/vaibhavpandeyvpz/hooman.git"
 APP_USER="hooman"
+APP_USER_SUDOER="false"
 APP_GROUP=""
 APP_HOME=""
 INSTALL_DIR=""
@@ -77,6 +78,14 @@ prompt_inputs() {
   prompt_line "Dedicated app user [hooman]: " APP_USER
   APP_USER="${APP_USER:-hooman}"
 
+  local answer
+  read -r -u "${PROMPT_FD}" -p "Add ${APP_USER} as sudoer (NOPASSWD)? [y/N]: " answer || true
+  if [[ "${answer,,}" == "y" || "${answer,,}" == "yes" ]]; then
+    APP_USER_SUDOER="true"
+  else
+    APP_USER_SUDOER="false"
+  fi
+
   if [[ ! "${APP_USER}" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
     echo "Invalid username '${APP_USER}'. Use lowercase letters, numbers, _ or -." >&2
     exit 1
@@ -127,6 +136,19 @@ setup_dedicated_user() {
     echo "Could not determine primary group for ${APP_USER}." >&2
     exit 1
   fi
+
+  if [[ "${APP_USER_SUDOER:-false}" == "true" ]]; then
+    log "Adding ${APP_USER} to sudoers (NOPASSWD)"
+    local sudoers_dropin="/etc/sudoers.d/99-hooman-${APP_USER}"
+    echo "${APP_USER} ALL=(ALL) NOPASSWD: ALL" | ${SUDO} tee "${sudoers_dropin}" >/dev/null
+    ${SUDO} chmod 440 "${sudoers_dropin}"
+    if ! ${SUDO} visudo -c -f "${sudoers_dropin}" >/dev/null 2>&1; then
+      echo "Invalid sudoers file. Removing ${sudoers_dropin}." >&2
+      ${SUDO} rm -f "${sudoers_dropin}"
+      exit 1
+    fi
+  fi
+
   INSTALL_DIR="${APP_HOME}/hooman"
 }
 
