@@ -39,35 +39,56 @@ type UserInputContentPart =
 async function buildUserContentParts(
   text: string,
   attachments?: Array<{ name: string; path: string; mime: string }>,
+  enableFileInput = true,
 ): Promise<UserInputContentPart[]> {
   const parts: UserInputContentPart[] = [
     { type: "input_text", text: text ?? "" },
   ];
+  const skippedPaths: string[] = [];
   if (attachments?.length) {
     for (const a of attachments) {
-      try {
-        const buf = await readFile(a.path);
-        const data = buf.toString("base64").replace(/\s/g, "").trim();
-        if (!data) continue;
-        const contentType = a.mime.toLowerCase().split(";")[0].trim();
-        const dataUrl = `data:${contentType};base64,${data}`;
-        if (
-          IMAGE_MIME_TYPES.includes(
-            contentType as (typeof IMAGE_MIME_TYPES)[number],
-          )
-        ) {
+      const contentType = a.mime.toLowerCase().split(";")[0].trim();
+      const isImage = IMAGE_MIME_TYPES.includes(
+        contentType as (typeof IMAGE_MIME_TYPES)[number],
+      );
+      if (isImage) {
+        try {
+          const buf = await readFile(a.path);
+          const data = buf.toString("base64").replace(/\s/g, "").trim();
+          if (!data) continue;
+          const dataUrl = `data:${contentType};base64,${data}`;
           parts.push({ type: "input_image", image: dataUrl, detail: "auto" });
-        } else {
+        } catch (e) {
+          debug("Attachment read failed path=%s: %o", a.path, e);
+        }
+      } else if (enableFileInput) {
+        try {
+          const buf = await readFile(a.path);
+          const data = buf.toString("base64").replace(/\s/g, "").trim();
+          if (!data) continue;
+          const dataUrl = `data:${contentType};base64,${data}`;
           parts.push({
             type: "input_file",
             file: dataUrl,
             filename: a.name,
           });
+        } catch (e) {
+          debug("Attachment read failed path=%s: %o", a.path, e);
         }
-      } catch (e) {
-        debug("Attachment read failed path=%s: %o", a.path, e);
+      } else {
+        debug(
+          "Skipping non-image attachment (file input disabled): %s",
+          a.name,
+        );
+        skippedPaths.push(a.path);
       }
     }
+  }
+  if (skippedPaths.length > 0) {
+    parts.push({
+      type: "input_text",
+      text: `Files uploaded:\n${skippedPaths.join("\n")}`,
+    });
   }
   return parts;
 }
@@ -309,12 +330,14 @@ export async function createHoomanRunner(options: {
       if (hasUserContent) {
         const channelContext = buildChannelContext(options?.channel);
         const turns = messageParts.length > 0 ? messageParts : [""];
+        const enableFileInput = getConfig().ENABLE_FILE_INPUT !== false;
         for (let i = 0; i < turns.length; i += 1) {
           const turnText = turns[i] ?? "";
           const isLastTurn = i === turns.length - 1;
           const userContent = await buildUserContentParts(
             turnText,
             isLastTurn ? options?.attachments : undefined,
+            enableFileInput,
           );
           const prompt: AgentInputItem = {
             type: "message",

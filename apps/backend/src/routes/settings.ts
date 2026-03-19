@@ -51,6 +51,7 @@ export function registerSettingsRoutes(app: Express, ctx: AppContext): void {
       TOOL_TIMEOUT_MS: c.TOOL_TIMEOUT_MS,
       TOOL_APPROVAL_MODE: c.TOOL_APPROVAL_MODE,
       SYSTEM_MCP_SERVERS: c.SYSTEM_MCP_SERVERS,
+      ENABLE_FILE_INPUT: c.ENABLE_FILE_INPUT,
     });
   });
 
@@ -109,6 +110,7 @@ export function registerSettingsRoutes(app: Express, ctx: AppContext): void {
           | ToolApprovalModeId
           | undefined,
         SYSTEM_MCP_SERVERS: patch.SYSTEM_MCP_SERVERS as string | undefined,
+        ENABLE_FILE_INPUT: patch.ENABLE_FILE_INPUT as boolean | undefined,
       });
 
       res.json(updated);

@@ -1,6 +1,7 @@
 import { join } from "path";
 import { BACKEND_ROOT, env } from "../../env.js";
 import { getChannelsConfig, getSystemMcpServers } from "../../config.js";
+import { getWorkspaceAttachmentsDir } from "../../utils/workspace.js";
 import type { MCPConnection, MCPConnectionStdio } from "../../types.js";
 
 const DEFAULT_MCP_CWD = env.MCP_STDIO_DEFAULT_CWD;
@@ -59,7 +60,12 @@ const ALL_SYSTEM_MCP_CONNECTIONS: MCPConnectionStdio[] = [
     type: "stdio",
     name: "filesystem",
     command: "npx",
-    args: ["-y", "@modelcontextprotocol/server-filesystem", DEFAULT_MCP_CWD],
+    args: [
+      "-y",
+      "@modelcontextprotocol/server-filesystem",
+      DEFAULT_MCP_CWD,
+      getWorkspaceAttachmentsDir(),
+    ],
     cwd: DEFAULT_MCP_CWD,
   },
   {

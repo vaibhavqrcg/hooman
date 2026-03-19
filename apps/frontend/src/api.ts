@@ -516,6 +516,8 @@ export interface AppConfig {
   TOOL_APPROVAL_MODE?: ToolApprovalModeId;
   /** Comma-separated enabled system MCP names (e.g. time,fetch,skills). Toggle in MCP tab. */
   SYSTEM_MCP_SERVERS?: string;
+  /** When false, only text and image parts are sent to the agent; non-image attachments are skipped. */
+  ENABLE_FILE_INPUT?: boolean;
 }
 
 export interface SystemMcpEntry {

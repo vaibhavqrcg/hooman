@@ -88,6 +88,8 @@ export interface PersistedConfig {
   TOOL_APPROVAL_PARSE_TIMEOUT_MS?: number;
   /** Comma-separated list of enabled system MCP server names (e.g. time,fetch,skills). Overrides env SYSTEM_MCP_SERVERS when set. */
   SYSTEM_MCP_SERVERS?: string;
+  /** When false, only text and image parts are sent to the agent; non-image attachments (e.g. video, PDF) are skipped. Default true. */
+  ENABLE_FILE_INPUT?: boolean;
 }
 
 /** Tool approval mode: LLM-based or static formatting/parsing. */
@@ -130,6 +132,7 @@ const DEFAULTS: PersistedConfig = {
   TOOL_APPROVAL_MODE: "llm",
   TOOL_APPROVAL_FORMAT_TIMEOUT_MS: 60_000,
   TOOL_APPROVAL_PARSE_TIMEOUT_MS: 60_000,
+  ENABLE_FILE_INPUT: true,
 };
 
 let store: PersistedConfig = { ...DEFAULTS };
@@ -277,6 +280,8 @@ export function updateConfig(patch: Partial<PersistedConfig>): PersistedConfig {
   if (patch.SYSTEM_MCP_SERVERS !== undefined)
     store.SYSTEM_MCP_SERVERS =
       String(patch.SYSTEM_MCP_SERVERS).trim() || undefined;
+  if (patch.ENABLE_FILE_INPUT !== undefined)
+    store.ENABLE_FILE_INPUT = Boolean(patch.ENABLE_FILE_INPUT);
   persist().catch((err) => debug("persist error: %o", err));
   return { ...store };
 }
@@ -426,6 +431,8 @@ export async function loadPersisted(): Promise<void> {
       if (parsed.SYSTEM_MCP_SERVERS !== undefined)
         store.SYSTEM_MCP_SERVERS =
           String(parsed.SYSTEM_MCP_SERVERS).trim() || undefined;
+      if (parsed.ENABLE_FILE_INPUT !== undefined)
+        store.ENABLE_FILE_INPUT = Boolean(parsed.ENABLE_FILE_INPUT);
       if (parsed.channels && typeof parsed.channels === "object")
         channelsStore = { ...parsed.channels };
     }

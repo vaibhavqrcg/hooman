@@ -95,6 +95,7 @@ export function Settings() {
         MAX_INPUT_TOKENS: form.MAX_INPUT_TOKENS,
         CHAT_TIMEOUT_MS: form.CHAT_TIMEOUT_MS,
         TOOL_APPROVAL_MODE: form.TOOL_APPROVAL_MODE,
+        ENABLE_FILE_INPUT: form.ENABLE_FILE_INPUT,
       });
       setForm({ ...updated });
       setMessage({
@@ -899,6 +900,33 @@ export function Settings() {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="pt-4 border-t border-hooman-border">
+            <h3 className="text-sm font-medium text-zinc-300 mb-2">
+              File input
+            </h3>
+            <p className="text-xs text-hooman-muted mb-3">
+              Send non-image attachments (e.g. video, PDF) to the agent as file
+              input. When off, only text and images are included; other uploads
+              are listed by path so the agent can read them via the filesystem
+              if needed.
+            </p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.ENABLE_FILE_INPUT !== false}
+                onChange={(e) =>
+                  setForm((f) =>
+                    f ? { ...f, ENABLE_FILE_INPUT: e.target.checked } : f,
+                  )
+                }
+                className="rounded border-hooman-border bg-hooman-surface text-hooman-accent focus:ring-hooman-accent"
+              />
+              <span className="text-sm text-zinc-300">
+                Enable file input (include non-image attachments)
+              </span>
+            </label>
           </div>
 
           <div className="pt-4 border-t border-hooman-border">
