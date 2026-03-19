@@ -3,6 +3,7 @@
  * Extracted from event-handlers.ts for clarity.
  */
 import createDebug from "debug";
+import { randomUUID } from "node:crypto";
 import type { NormalizedEvent } from "../types.js";
 import type { ContextStore } from "../chats/context.js";
 import type { AuditLog } from "../audit/audit.js";
@@ -320,6 +321,7 @@ export function createChatHandler(
       channel: channelMeta as ChannelMeta | undefined,
       attachments: attachmentPaths,
       sessionId: userId,
+      runId: randomUUID(),
     };
     const chatTimeoutMs =
       getConfig().CHAT_TIMEOUT_MS || DEFAULT_CHAT_TIMEOUT_MS;
@@ -364,7 +366,7 @@ export function createChatHandler(
     }
 
     try {
-      const thread = await context.getThreadForAgent(userId);
+      const thread = await context.getThreadForAgent(userId, runOptions.runId);
       const result = await runAgentWithSignals(deps, {
         event,
         history: thread,
@@ -389,6 +391,7 @@ export function createChatHandler(
         event,
         payload,
         result,
+        runOptions,
         dispatchResponse,
       });
     } catch (err) {
@@ -396,6 +399,7 @@ export function createChatHandler(
         event,
         payload,
         err,
+        runOptions,
         dispatchResponse,
       });
     }
@@ -559,7 +563,12 @@ async function handleApprovalReject(
     output: "Execution denied by user.",
   } as AgentInputItem;
   thread.push(toolResultMessage);
-  await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
+  const runIdReject = consumed.runId ?? runOptions.runId;
+  await context.addTurnToAgentThread(
+    payload.userId,
+    [toolResultMessage],
+    runIdReject,
+  );
 
   const nextTool = getNextToolCallNeedingApproval(thread);
   if (nextTool) {
@@ -567,7 +576,7 @@ async function handleApprovalReject(
       event,
       payload,
       channelKey,
-      runOptions,
+      runOptions: { ...runOptions, runId: runIdReject },
       toolName: nextTool.toolName,
       toolArgs: nextTool.toolArgs,
       toolCallId: nextTool.toolCallId,
@@ -580,11 +589,12 @@ async function handleApprovalReject(
 
   // All tools in this assistant message now have a result (approved or rejected). Run agent once to produce final response using all results.
   try {
+    const runOptionsReject = { ...runOptions, runId: runIdReject };
     const result = await runAgentWithSignals(deps, {
       event,
       history: thread,
       text: "User denied one or more tools. Use the tool results for any tools that were approved; for any that were denied, say the user declined that check.",
-      runOptions,
+      runOptions: runOptionsReject,
       timeoutMs: chatTimeoutMs,
     });
 
@@ -593,7 +603,7 @@ async function handleApprovalReject(
         event,
         payload,
         channelKey,
-        runOptions,
+        runOptions: runOptionsReject,
         result,
         dispatchResponse,
       });
@@ -612,26 +622,36 @@ async function handleApprovalReject(
     await dispatchResponse(
       event.id,
       event.source,
-      runOptions.channel as ChannelMeta | undefined,
+      runOptionsReject.channel as ChannelMeta | undefined,
       assistantText,
     );
 
     const runMessages = result.messages ?? [];
     if (runMessages.length) {
-      await context.addTurnToAgentThread(payload.userId, runMessages);
+      await context.addTurnToAgentThread(
+        payload.userId,
+        runMessages,
+        runIdReject,
+      );
     } else {
-      await context.addTurnToAgentThread(payload.userId, [
-        {
-          type: "message",
-          role: "user",
-          content: [{ type: "input_text", text: toCombinedText(payload.text) }],
-        },
-        {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: assistantText }],
-        },
-      ] as AgentInputItem[]);
+      await context.addTurnToAgentThread(
+        payload.userId,
+        [
+          {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: toCombinedText(payload.text) },
+            ],
+          },
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: assistantText }],
+          },
+        ] as AgentInputItem[],
+        runIdReject,
+      );
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -713,6 +733,11 @@ async function handleApprovalConfirm(
   );
 
   try {
+    const runId = consumed.runId;
+    const runOptionsResume: RunChatOptions = {
+      ...runOptions,
+      runId: runId ?? runOptions.runId,
+    };
     let thread: AgentInputItem[];
     try {
       thread = JSON.parse(consumed.threadSnapshotJson) as AgentInputItem[];
@@ -737,15 +762,18 @@ async function handleApprovalConfirm(
           : JSON.stringify(toolResult ?? {}),
     } as AgentInputItem;
     thread.push(toolResultMessage);
-    await context.addTurnToAgentThread(payload.userId, [toolResultMessage]);
-
+    await context.addTurnToAgentThread(
+      payload.userId,
+      [toolResultMessage],
+      runId,
+    );
     const nextTool = getNextToolCallNeedingApproval(thread);
     if (nextTool) {
       await requestApprovalForTool(deps, {
         event,
         payload,
         channelKey,
-        runOptions,
+        runOptions: runOptionsResume,
         toolName: nextTool.toolName,
         toolArgs: nextTool.toolArgs,
         toolCallId: nextTool.toolCallId,
@@ -761,7 +789,7 @@ async function handleApprovalConfirm(
       event,
       history: thread,
       text: "",
-      runOptions,
+      runOptions: runOptionsResume,
       timeoutMs: chatTimeoutMs,
     });
 
@@ -770,7 +798,7 @@ async function handleApprovalConfirm(
         event,
         payload,
         channelKey,
-        runOptions,
+        runOptions: runOptionsResume,
         result,
         dispatchResponse,
       });
@@ -789,26 +817,32 @@ async function handleApprovalConfirm(
     await dispatchResponse(
       event.id,
       event.source,
-      runOptions.channel as ChannelMeta | undefined,
+      runOptionsResume.channel as ChannelMeta | undefined,
       assistantText,
     );
 
     const runMessages = result.messages ?? [];
     if (runMessages.length) {
-      await context.addTurnToAgentThread(payload.userId, runMessages);
+      await context.addTurnToAgentThread(payload.userId, runMessages, runId);
     } else {
-      await context.addTurnToAgentThread(payload.userId, [
-        {
-          type: "message",
-          role: "user",
-          content: [{ type: "input_text", text: toCombinedText(payload.text) }],
-        },
-        {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: assistantText }],
-        },
-      ] as AgentInputItem[]);
+      await context.addTurnToAgentThread(
+        payload.userId,
+        [
+          {
+            type: "message",
+            role: "user",
+            content: [
+              { type: "input_text", text: toCombinedText(payload.text) },
+            ],
+          },
+          {
+            type: "message",
+            role: "assistant",
+            content: [{ type: "output_text", text: assistantText }],
+          },
+        ] as AgentInputItem[],
+        runId,
+      );
     }
   } catch (err) {
     const msg = (err as Error).message;
@@ -1016,7 +1050,11 @@ async function handleNeedsApproval(
       ? needsApproval.threadSnapshot.slice(needsApproval.historyLength)
       : needsApproval.threadSnapshot;
   if (turnToPersist.length) {
-    await context.addTurnToAgentThread(payload.userId, turnToPersist);
+    await context.addTurnToAgentThread(
+      payload.userId,
+      turnToPersist,
+      runOptions.runId,
+    );
   }
 
   await setPending(
@@ -1030,6 +1068,7 @@ async function handleNeedsApproval(
       threadSnapshotJson: JSON.stringify(needsApproval.threadSnapshot),
       historyLength: needsApproval.historyLength,
       approvalMessage,
+      runId: runOptions.runId,
       ...(needsApproval.toolCallId
         ? { toolCallId: needsApproval.toolCallId }
         : {}),
@@ -1070,6 +1109,7 @@ interface AgentSuccessCtx {
   event: NormalizedEvent;
   payload: NormalizedMessagePayload;
   result: RunChatResult;
+  runOptions?: RunChatOptions;
   dispatchResponse: (
     eventId: string,
     source: string,
@@ -1082,7 +1122,7 @@ async function handleAgentSuccess(
   deps: ChatHandlerDeps,
   ctx: AgentSuccessCtx,
 ): Promise<void> {
-  const { event, payload, result, dispatchResponse } = ctx;
+  const { event, payload, result, runOptions, dispatchResponse } = ctx;
   const { context, auditLog } = deps;
 
   const assistantText =
@@ -1117,20 +1157,28 @@ async function handleAgentSuccess(
 
   const messages = result.messages;
   if (messages?.length) {
-    await context.addTurnToAgentThread(payload.userId, messages);
+    await context.addTurnToAgentThread(
+      payload.userId,
+      messages,
+      runOptions?.runId,
+    );
   } else {
-    await context.addTurnToAgentThread(payload.userId, [
-      {
-        type: "message",
-        role: "user",
-        content: [{ type: "input_text", text: toCombinedText(payload.text) }],
-      },
-      {
-        type: "message",
-        role: "assistant",
-        content: [{ type: "output_text", text: assistantText }],
-      },
-    ] as AgentInputItem[]);
+    await context.addTurnToAgentThread(
+      payload.userId,
+      [
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: assistantText }],
+        },
+      ] as AgentInputItem[],
+      runOptions?.runId,
+    );
   }
 }
 
@@ -1138,6 +1186,7 @@ interface ChatErrorCtx {
   event: NormalizedEvent;
   payload: NormalizedMessagePayload;
   err: unknown;
+  runOptions?: RunChatOptions;
   dispatchResponse: (
     eventId: string,
     source: string,
@@ -1150,7 +1199,7 @@ async function handleChatError(
   deps: ChatHandlerDeps,
   ctx: ChatErrorCtx,
 ): Promise<void> {
-  const { event, payload, err, dispatchResponse } = ctx;
+  const { event, payload, err, runOptions, dispatchResponse } = ctx;
   const { context } = deps;
 
   // Clear Slack "Finding answers..." / "Evaluating..." status on error so the UI doesn't stay stuck.
@@ -1190,16 +1239,20 @@ async function handleChatError(
     payload.channelMeta ?? undefined,
     assistantText,
   );
-  await context.addTurnToAgentThread(payload.userId, [
-    {
-      type: "message",
-      role: "user",
-      content: [{ type: "input_text", text: toCombinedText(payload.text) }],
-    },
-    {
-      type: "message",
-      role: "assistant",
-      content: [{ type: "output_text", text: assistantText }],
-    },
-  ] as AgentInputItem[]);
+  await context.addTurnToAgentThread(
+    payload.userId,
+    [
+      {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: toCombinedText(payload.text) }],
+      },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: assistantText }],
+      },
+    ] as AgentInputItem[],
+    runOptions?.runId,
+  );
 }

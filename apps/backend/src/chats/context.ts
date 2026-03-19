@@ -90,9 +90,13 @@ export interface ContextStore {
   addTurnToAgentThread(
     userId: string,
     messages: AgentInputItem[],
+    runId?: string | null,
   ): Promise<void>;
   /** Token-limited thread for the agent (from recollect; OpenAI Agents items). */
-  getThreadForAgent(userId: string): Promise<AgentInputItem[]>;
+  getThreadForAgent(
+    userId: string,
+    runId?: string | null,
+  ): Promise<AgentInputItem[]>;
   /** Clear all messages for the user (chat history and recollect). */
   clearAll(userId: string): Promise<void>;
 }
@@ -156,16 +160,36 @@ export async function createContext(
     async addTurnToAgentThread(
       userId: string,
       messages: AgentInputItem[],
+      runId?: string | null,
     ): Promise<void> {
       if (messages.length === 0) return;
-      await memory.addMessages(
+      await (
+        memory as unknown as {
+          addMessages(
+            sessionId: string,
+            runId: string | null,
+            messages: Record<string, unknown>[],
+          ): Promise<void>;
+        }
+      ).addMessages(
         userId,
+        runId ?? null,
         messages as unknown as Record<string, unknown>[],
       );
     },
 
-    async getThreadForAgent(userId: string): Promise<AgentInputItem[]> {
-      const messages = await memory.getMessages(userId);
+    async getThreadForAgent(
+      userId: string,
+      runId?: string | null,
+    ): Promise<AgentInputItem[]> {
+      const messages = await (
+        memory as {
+          getMessages(
+            sessionId: string,
+            runId?: string | null,
+          ): Promise<Record<string, unknown>[]>;
+        }
+      ).getMessages(userId, runId);
       return messages.map((msg) => msg as AgentInputItem);
     },
 

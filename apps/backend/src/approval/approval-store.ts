@@ -29,6 +29,8 @@ export interface PendingApproval {
   toolCallId?: string;
   /** Tool id for allow-every-time store. */
   toolId?: string;
+  /** Run id for this conversation run (so memory compaction never summarizes this run). */
+  runId?: string;
   createdAt: string;
   expiresAt: string;
 }

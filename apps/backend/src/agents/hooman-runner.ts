@@ -109,6 +109,8 @@ export interface RunChatOptions {
   channel?: ChannelMeta;
   sessionId?: string;
   attachments?: Array<{ name: string; path: string; mime: string }>;
+  /** Unique id for this run (per event). Passed to memory so compaction never summarizes the current run. */
+  runId?: string;
 }
 
 export interface NeedsApprovalPayload {

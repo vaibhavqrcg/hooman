@@ -940,10 +940,10 @@
     ai "^6.0.94"
     zod "^4.3.6"
 
-"@one710/recollect@^1.4.0":
-  version "1.4.0"
-  resolved "https://registry.npmmirror.com/@one710/recollect/-/recollect-1.4.0.tgz#e4bc3c46ffa5fc83c82820e873f4f1b67b5a7443"
-  integrity sha512-7UVGRYRybdJC/kXA2WGjavkqrNoQc9CFeO55up0It5Sq7QoTP4QKhvZOrPUFFz/sksKzlBDwI7sscw12h1ZzFw==
+"@one710/recollect@^1.5.0":
+  version "1.5.0"
+  resolved "https://registry.yarnpkg.com/@one710/recollect/-/recollect-1.5.0.tgz#514d4e59ffb81741f2ffd15be60de5563a7d657d"
+  integrity sha512-hiofp6GwGwHFwOSm1PaAK6dgrjp2OFfEbogARP2uWWdUQDJseMqpZDimePPrT6UIVA7cYAakHmw31h3GfMlnHA==
 
 "@openai/agents-core@0.7.0":
   version "0.7.0"

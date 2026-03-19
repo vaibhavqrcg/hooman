@@ -39,7 +39,7 @@
     "@mistralai/mistralai": "^1.14.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@one710/consciousness": "^1.0.3",
-    "@one710/recollect": "^1.4.0",
+    "@one710/recollect": "^1.5.0",
     "@openai/agents": "^0.7.0",
     "@openai/agents-extensions": "^0.7.0",
     "@prisma/client": "5",
