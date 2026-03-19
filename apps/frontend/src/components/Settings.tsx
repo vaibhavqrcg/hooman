@@ -10,6 +10,7 @@ import {
 } from "../api";
 
 import { Button } from "./Button";
+import { Checkbox } from "./Checkbox";
 import { Input } from "./Input";
 import { Select } from "./Select";
 import { Textarea } from "./Textarea";
@@ -912,21 +913,16 @@ export function Settings() {
               are listed by path so the agent can read them via the filesystem
               if needed.
             </p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.ENABLE_FILE_INPUT !== false}
-                onChange={(e) =>
-                  setForm((f) =>
-                    f ? { ...f, ENABLE_FILE_INPUT: e.target.checked } : f,
-                  )
-                }
-                className="rounded border-hooman-border bg-hooman-surface text-hooman-accent focus:ring-hooman-accent"
-              />
-              <span className="text-sm text-zinc-300">
-                Enable file input (include non-image attachments)
-              </span>
-            </label>
+            <Checkbox
+              id="settings-enable-file-input"
+              checked={form.ENABLE_FILE_INPUT !== false}
+              onChange={(checked) =>
+                setForm((f) =>
+                  f ? { ...f, ENABLE_FILE_INPUT: checked } : f,
+                )
+              }
+              label="Enable file input (include non-image attachments)"
+            />
           </div>
 
           <div className="pt-4 border-t border-hooman-border">
